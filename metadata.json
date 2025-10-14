@@ -1,0 +1,5 @@
+{
+  "name": "Sistema de Procesamiento Automatizado ARBA A-122R",
+  "description": "Una aplicación web optimizada que automatiza todo el proceso de retenciones ARBA A-122R. Simula un flujo de trabajo de ERP transparente llamando a una API local para manejar la autenticación, la iniciación de DJ, el procesamiento de comprobantes desde un archivo CSV y la recuperación del PDF oficial.",
+  "requestFramePermissions": []
+}
