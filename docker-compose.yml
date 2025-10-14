@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  # Definición del servicio de la interfaz web
+  arba-frontend:
+    # Nombre del contenedor para una fácil identificación
+    container_name: arba_frontend_app
+    
+    # Instrucciones para construir la imagen
+    build:
+      # El contexto de construcción es el directorio actual
+      context: .
+      # El Dockerfile a utilizar
+      dockerfile: Dockerfile
+    
+    # Mapeo de puertos: Expone el puerto 80 del contenedor en el puerto 8080 del host (servidor)
+    ports:
+      - "8080:80"
+      
+    # Política de reinicio: El contenedor se reiniciará automáticamente a menos que se detenga manualmente
+    restart: unless-stopped
