@@ -3,16 +3,18 @@ import { useSettings } from '../contexts/SettingsContext';
 import { procesarArchivoLocal } from '../services/localApi';
 import { VoucherData } from '../types';
 
-type StatusStep = 'idle' | 'calling_api' | 'auth' | 'dj' | 'upload' | 'pdf' | 'success' | 'error';
+type StatusStep = 'idle' | 'calling_api' | 'auth' | 'dj_check' | 'dj_close' | 'dj_open' | 'upload' | 'pdf' | 'success' | 'error';
 
 const statusMessages: Record<StatusStep, string> = {
   idle: 'Esperando para iniciar el proceso.',
-  calling_api: 'Paso 1/5: Llamando a API Local...',
-  auth: 'Paso 2/5: Autenticando con ARBA...',
-  dj: 'Paso 3/5: Iniciando Declaración Jurada...',
-  upload: 'Paso 4/5: Subiendo datos del comprobante...',
-  pdf: 'Paso 5/5: Generando PDF del comprobante...',
-  success: '¡Proceso completado con éxito!',
+  calling_api: 'Paso 1/6: Llamando a API Local...',
+  auth: 'Paso 2/6: Autenticando con ARBA...',
+  dj_check: 'Paso 3/6: Verificando DJ abierta para el período actual...',
+  dj_close: 'Paso 3.1/6: Cerrando DJ del período anterior (simulado)...',
+  dj_open: 'Paso 3.2/6: Creando nueva DJ para el período actual...',
+  upload: 'Paso 4/6: Subiendo datos del comprobante...',
+  pdf: 'Paso 5/6: Generando PDF del comprobante...',
+  success: 'Paso 6/6: ¡Proceso completado con éxito!',
   error: 'El proceso ha fallado.',
 };
 

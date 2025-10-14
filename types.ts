@@ -14,12 +14,16 @@ export interface DJPayload {
   mes: number;
 }
 
+export interface DJQuery extends Omit<DJPayload, 'actividadId'> {}
+
 export interface DJ {
   idDj: string;
   cuit: string;
   anio: number;
   mes: number;
   quincena: number;
+  // Se asume que la API puede devolver más campos, como el estado.
+  estado?: string;
 }
 
 export interface VoucherData {

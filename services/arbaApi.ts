@@ -1,4 +1,4 @@
-import { AuthCredentials, DJPayload, VoucherPayload, DJ } from '../types';
+import { AuthCredentials, DJPayload, VoucherPayload, DJ, DJQuery } from '../types';
 import { endpoints, credentials } from '../config';
 import { Environment } from '../contexts/SettingsContext';
 
@@ -16,7 +16,9 @@ const handleResponse = async (response: Response) => {
   if (response.ok) {
     const contentType = response.headers.get('Content-Type');
     if (contentType?.includes('application/json')) {
-      return response.json();
+      // Manejar el caso de una respuesta vacía que de alguna manera tiene el content-type json
+      const text = await response.text();
+      return text ? JSON.parse(text) : null;
     }
     if (contentType?.includes('application/pdf')) {
       return response.blob();
@@ -74,6 +76,51 @@ export const getAuthToken = async (
   console.log('Token obtenido con éxito.');
   return data.access_token;
 };
+
+// --- NUEVAS FUNCIONES PARA GESTIÓN DE DJ ---
+
+/**
+ * Consulta si existe una DJ para un período específico.
+ * NOTA: El endpoint es una suposición basada en prácticas REST.
+ * Se asume que devuelve un array de DJs que coinciden con la consulta.
+ */
+export const consultarDJ = async (params: DJQuery, token: string, environment: Environment): Promise<DJ[]> => {
+  console.log(`Consultando DJ en [${environment.toUpperCase()}] con parámetros:`, params);
+  const envConfig = endpoints[environment];
+  const url = new URL(`${envConfig.apiBaseUrl}/declaracionJurada`);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.append(key, String(value)));
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { 'Authorization': `Bearer ${token}` },
+  });
+  
+  const data = await handleResponse(response);
+  // Se asume que la API devuelve un array, incluso si está vacío.
+  return Array.isArray(data) ? data : [];
+};
+
+/**
+ * Cierra una Declaración Jurada existente.
+ * NOTA: El endpoint es una suposición. Se asume un método POST a un sub-recurso 'cerrar'.
+ */
+export const cerrarDJ = async (idDj: string, token: string, environment: Environment): Promise<void> => {
+    console.log(`Cerrando DJ [${idDj}] en [${environment.toUpperCase()}]`);
+    const envConfig = endpoints[environment];
+    const response = await fetch(`${envConfig.apiBaseUrl}/declaracionJurada/${idDj}/cerrar`, {
+        method: 'POST', // O podría ser PUT
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ estado: 'CERRADA' }) // El cuerpo podría no ser necesario
+    });
+    await handleResponse(response);
+    console.log(`DJ [${idDj}] cerrada con éxito.`);
+};
+
+
+// --- FUNCIONES EXISTENTES ---
 
 export const initiateDJ = async (payload: DJPayload, token: string, environment: Environment): Promise<DJ> => {
   console.log(`Iniciando DJ en [${environment.toUpperCase()}] con payload:`, payload);
