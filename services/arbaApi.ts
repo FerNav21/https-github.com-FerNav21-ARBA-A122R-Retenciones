@@ -18,13 +18,13 @@ const handleResponse = async (response: Response) => {
     if (contentType?.includes('application/json')) {
       // Manejar el caso de una respuesta vacía que de alguna manera tiene el content-type json
       const text = await response.text();
-      return text ? JSON.parse(text) : null;
+      return text ? JSON.parse(text) : { message: 'Operación exitosa.' };
     }
     if (contentType?.includes('application/pdf')) {
       return response.blob();
     }
-    // Si la respuesta es exitosa pero no tiene contenido (ej. 204 No Content)
-    return;
+    // Si la respuesta es exitosa pero no tiene contenido (ej. 204 No Content para un DELETE)
+    return { message: 'Operación exitosa.' };
   } else {
     // Intenta leer el cuerpo del error para un mensaje más detallado.
     const errorBody = await response.text();
@@ -77,12 +77,10 @@ export const getAuthToken = async (
   return data.access_token;
 };
 
-// --- NUEVAS FUNCIONES PARA GESTIÓN DE DJ ---
+// --- GESTIÓN DE DJ ---
 
 /**
  * Consulta si existe una DJ para un período específico.
- * NOTA: El endpoint es una suposición basada en prácticas REST.
- * Se asume que devuelve un array de DJs que coinciden con la consulta.
  */
 export const consultarDJ = async (params: DJQuery, token: string, environment: Environment): Promise<DJ[]> => {
   console.log(`Consultando DJ en [${environment.toUpperCase()}] con parámetros:`, params);
@@ -96,32 +94,30 @@ export const consultarDJ = async (params: DJQuery, token: string, environment: E
   });
   
   const data = await handleResponse(response);
-  // Se asume que la API devuelve un array, incluso si está vacío.
   return Array.isArray(data) ? data : [];
 };
 
 /**
  * Cierra una Declaración Jurada existente.
- * NOTA: El endpoint es una suposición. Se asume un método POST a un sub-recurso 'cerrar'.
  */
 export const cerrarDJ = async (idDj: string, token: string, environment: Environment): Promise<void> => {
     console.log(`Cerrando DJ [${idDj}] en [${environment.toUpperCase()}]`);
     const envConfig = endpoints[environment];
     const response = await fetch(`${envConfig.apiBaseUrl}/declaracionJurada/${idDj}/cerrar`, {
-        method: 'POST', // O podría ser PUT
+        method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ estado: 'CERRADA' }) // El cuerpo podría no ser necesario
+        body: JSON.stringify({ estado: 'CERRADA' })
     });
     await handleResponse(response);
     console.log(`DJ [${idDj}] cerrada con éxito.`);
 };
 
-
-// --- FUNCIONES EXISTENTES ---
-
+/**
+ * Inicia una nueva Declaración Jurada.
+ */
 export const initiateDJ = async (payload: DJPayload, token: string, environment: Environment): Promise<DJ> => {
   console.log(`Iniciando DJ en [${environment.toUpperCase()}] con payload:`, payload);
   const envConfig = endpoints[environment];
@@ -140,6 +136,11 @@ export const initiateDJ = async (payload: DJPayload, token: string, environment:
   return djData;
 };
 
+// --- GESTIÓN DE COMPROBANTES ---
+
+/**
+ * Sube un nuevo comprobante de retención.
+ */
 export const uploadVoucher = async (payload: VoucherPayload, token: string, environment: Environment): Promise<{ idComprobante: string }> => {
   console.log(`Subiendo comprobante en [${environment.toUpperCase()}] con payload:`, payload);
   const envConfig = endpoints[environment];
@@ -158,12 +159,15 @@ export const uploadVoucher = async (payload: VoucherPayload, token: string, envi
   return result;
 };
 
+/**
+ * Obtiene el PDF de un comprobante.
+ */
 export const getVoucherPDF = async (comprobanteId: string, token: string, environment: Environment): Promise<Blob> => {
   console.log(`Solicitando PDF en [${environment.toUpperCase()}] para comprobante ${comprobanteId}`);
   const envConfig = endpoints[environment];
   
   const url = new URL(`${envConfig.apiBaseUrl}/comprobantePdf`);
-  url.searchParams.append('idComprobante', comprobanteId);
+  url.searchParams.append('comprobanteId', comprobanteId);
 
   const response = await fetch(url.toString(), {
     method: 'GET',
@@ -178,4 +182,27 @@ export const getVoucherPDF = async (comprobanteId: string, token: string, enviro
   }
   console.log('PDF generado exitosamente.');
   return blob;
+};
+
+/**
+ * Anula (elimina) un comprobante de retención existente.
+ */
+export const deleteVoucher = async (idComprobante: string, token: string, environment: Environment): Promise<{ message: string }> => {
+  console.log(`Anulando comprobante [${idComprobante}] en [${environment.toUpperCase()}]`);
+  const envConfig = endpoints[environment];
+  const url = new URL(`${envConfig.apiBaseUrl}/comprobante`);
+  // El manual especifica el parámetro como "ID", pero "comprobanteId" es más consistente con el resto de la API.
+  // Si esto falla, se debería probar con el parámetro "ID".
+  url.searchParams.append('ID', idComprobante); 
+  
+  const response = await fetch(url.toString(), {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  const result = await handleResponse(response);
+  console.log(`Comprobante [${idComprobante}] anulado con éxito.`);
+  return result;
 };

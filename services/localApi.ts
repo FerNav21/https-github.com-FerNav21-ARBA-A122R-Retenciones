@@ -1,9 +1,12 @@
-import { getAuthToken, initiateDJ, uploadVoucher, getVoucherPDF, consultarDJ, cerrarDJ } from './arbaApi';
+import { getAuthToken, initiateDJ, uploadVoucher, getVoucherPDF, consultarDJ, cerrarDJ, deleteVoucher } from './arbaApi';
 import { DJ, DJPayload, VoucherData, VoucherPayload } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 
-type StatusStep = 'auth' | 'dj_check' | 'dj_close' | 'dj_open' | 'upload' | 'pdf';
-type StatusCallback = (step: StatusStep) => void;
+type CreateStatusStep = 'auth' | 'dj_check' | 'dj_close' | 'dj_open' | 'upload' | 'pdf' | 'success';
+type AnnulStatusStep = 'auth' | 'delete' | 'success';
+type CreateStatusCallback = (step: CreateStatusStep) => void;
+type AnnulStatusCallback = (step: AnnulStatusStep) => void;
+
 
 /**
  * Gestiona el ciclo de vida de la Declaración Jurada.
@@ -13,7 +16,7 @@ type StatusCallback = (step: StatusStep) => void;
 const gestionarDeclaracionJurada = async (
   token: string,
   settings: ReturnType<typeof useSettings>,
-  onStatusUpdate: StatusCallback
+  onStatusUpdate: CreateStatusCallback
 ): Promise<DJ> => {
   const ahora = new Date();
   const anioActual = ahora.getFullYear();
@@ -24,27 +27,18 @@ const gestionarDeclaracionJurada = async (
   const periodoActual = { anio: anioActual, mes: mesActual, quincena: quincenaActual };
   console.log('Período fiscal actual determinado:', periodoActual);
 
-  // 1. VERIFICAR SI YA EXISTE UNA DJ ABIERTA PARA EL PERÍODO ACTUAL
   onStatusUpdate('dj_check');
-  const djsAbiertas = await consultarDJ(
-    { cuit: settings.cuit, ...periodoActual },
-    token,
-    settings.environment
-  );
+  const djsAbiertas = await consultarDJ({ cuit: settings.cuit, ...periodoActual }, token, settings.environment);
+  const djAbierta = djsAbiertas.find(dj => dj.estado !== 'CERRADA');
 
-  const djAbierta = djsAbiertas.find(dj => dj.estado !== 'CERRADA'); // Asumiendo que la API devuelve un estado
   if (djAbierta) {
     console.log(`DJ existente encontrada para el período actual. ID: ${djAbierta.idDj}`);
     return djAbierta;
   }
   
-  // 2. SI NO HAY DJ ABIERTA, CREAR UNA NUEVA (Y SIMULAR CIERRE DE LA ANTERIOR)
-  console.log('No se encontró una DJ abierta para el período actual. Se creará una nueva.');
-  
-  // En un backend real, aquí iría la lógica para buscar la DJ del período anterior
-  // y cerrarla si es necesario. Lo simulamos con una actualización de estado.
+  console.log('No se encontró una DJ abierta. Se creará una nueva.');
   onStatusUpdate('dj_close');
-  // await cerrarDJ(idDjAnterior, token, settings.environment);
+  // Lógica de cierre de DJ anterior...
 
   onStatusUpdate('dj_open');
   const djPayload: DJPayload = {
@@ -54,28 +48,21 @@ const gestionarDeclaracionJurada = async (
   };
   
   const nuevaDj = await initiateDJ(djPayload, token, settings.environment);
-  if (!nuevaDj || !nuevaDj.idDj) {
-    throw new Error('No se pudo obtener el idDj al iniciar la nueva Declaración Jurada.');
-  }
+  if (!nuevaDj || !nuevaDj.idDj) throw new Error('No se pudo obtener el idDj al iniciar la nueva DJ.');
   return nuevaDj;
 };
 
-// Simula una API local (backend) que orquesta todo el proceso de ARBA.
+// Simula una API local (backend) que orquesta la creación de un comprobante.
 export const procesarArchivoLocal = async (
   csvContent: string,
   settings: ReturnType<typeof useSettings>,
-  onStatusUpdate: StatusCallback
+  onStatusUpdate: CreateStatusCallback
 ): Promise<Blob> => {
-  // 1. Parsear el contenido del CSV
   const [line] = csvContent.trim().split('\n');
-  if (!line) {
-    throw new Error('El archivo CSV está vacío o tiene un formato incorrecto.');
-  }
+  if (!line) throw new Error('El archivo CSV está vacío o tiene un formato incorrecto.');
 
   const fields = line.split(',');
-  if (fields.length !== 7) {
-    throw new Error(`El CSV debe tener 7 campos, pero se encontraron ${fields.length}.`);
-  }
+  if (fields.length !== 7) throw new Error(`El CSV debe tener 7 campos, pero se encontraron ${fields.length}.`);
 
   const voucherData: VoucherData = {
     cuitContribuyente: fields[0].trim(),
@@ -87,33 +74,40 @@ export const procesarArchivoLocal = async (
     fechaOperacion: fields[6].trim(),
   };
 
-  // 2. Autenticación
+  onStatusUpdate('auth');
+  const token = await getAuthToken({ username: settings.cuit, password: settings.cit }, settings.environment);
+
+  const dj = await gestionarDeclaracionJurada(token, settings, onStatusUpdate);
+
+  onStatusUpdate('upload');
+  const voucherPayload: VoucherPayload = { ...voucherData, idDj: dj.idDj, cuitAgente: settings.cuit, mes: dj.mes };
+  const uploadResult = await uploadVoucher(voucherPayload, token, settings.environment);
+  if (!uploadResult.idComprobante) throw new Error('No se pudo obtener el idComprobante después de subir el voucher.');
+
+  onStatusUpdate('pdf');
+  const pdfBlob = await getVoucherPDF(uploadResult.idComprobante, token, settings.environment);
+  onStatusUpdate('success');
+  return pdfBlob;
+};
+
+
+// Simula una API local (backend) que orquesta la anulación de un comprobante.
+export const anularComprobanteLocal = async (
+  idComprobante: string,
+  settings: ReturnType<typeof useSettings>,
+  onStatusUpdate: AnnulStatusCallback
+): Promise<{ message: string }> => {
+  // 1. Autenticación
   onStatusUpdate('auth');
   const token = await getAuthToken(
     { username: settings.cuit, password: settings.cit },
     settings.environment
   );
 
-  // 3. Gestionar la Declaración Jurada (lógica nueva y mejorada)
-  const dj = await gestionarDeclaracionJurada(token, settings, onStatusUpdate);
-
-  // 4. Subir el Comprobante
-  onStatusUpdate('upload');
-  const voucherPayload: VoucherPayload = {
-    ...voucherData,
-    idDj: dj.idDj,
-    cuitAgente: settings.cuit,
-    mes: dj.mes,
-  };
-  const uploadResult = await uploadVoucher(voucherPayload, token, settings.environment);
-
-  if (!uploadResult.idComprobante) {
-      throw new Error('No se pudo obtener el idComprobante después de subir el voucher.');
-  }
-
-  // 5. Obtener el PDF
-  onStatusUpdate('pdf');
-  const pdfBlob = await getVoucherPDF(uploadResult.idComprobante, token, settings.environment);
+  // 2. Enviar solicitud de anulación
+  onStatusUpdate('delete');
+  const result = await deleteVoucher(idComprobante, token, settings.environment);
   
-  return pdfBlob;
+  onStatusUpdate('success');
+  return result;
 };

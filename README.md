@@ -2,26 +2,29 @@
 
 ## 1. Descripción General
 
-Este proyecto es una aplicación web diseñada para actuar como una interfaz de control para un sistema automatizado de procesamiento de retenciones **ARBA A-122R**. La aplicación simula un flujo de trabajo empresarial (ERP) donde un archivo de retención, generado en un formato específico, es procesado de manera transparente a través de las APIs de ARBA.
+Este proyecto es una aplicación web diseñada para actuar como una interfaz de control para un sistema automatizado de procesamiento de retenciones **ARBA A-122R**. La aplicación simula un flujo de trabajo empresarial (ERP) donde un archivo de retención es procesado de manera transparente a través de las APIs de ARBA.
 
 La interfaz no procesa los archivos directamente en el navegador. En su lugar, invoca a una **API local (backend)** que es responsable de:
-1.  Leer un archivo CSV desde una carpeta de red compartida.
-2.  Orquestar el flujo completo de llamadas a la API de ARBA (Autenticación, **Gestión de DJ**, Alta de Comprobante).
-3.  Descargar el comprobante en formato PDF.
+1.  Leer un archivo CSV desde una carpeta de red compartida para la **creación** de un comprobante.
+2.  Orquestar el flujo completo de llamadas a la API de ARBA (Autenticación, **Gestión de DJ**, Alta o Baja de Comprobante).
+3.  Para la creación, descargar el comprobante en formato PDF.
 4.  Guardar el PDF en la misma carpeta de red, renombrándolo para que coincida con el archivo CSV original.
+5.  Para la **anulación**, enviar la solicitud de baja a ARBA para un comprobante existente.
 
-Esta arquitectura separa la interfaz de usuario de la lógica de negocio y el manejo de archivos, creando un sistema robusto y seguro.
+Esta arquitectura separa la interfaz de usuario de la lógica de negocio, creando un sistema robusto y seguro para la gestión completa del ciclo de vida de los comprobantes.
 
 ## 2. Características Principales
 
--   **Interfaz de Control**: Permite iniciar y monitorear el procesamiento de un único archivo de retención a la vez.
--   **Gestión de DJ Inteligente**: Determina automáticamente la quincena correcta, reutiliza DJs abiertas y simula el cierre y apertura de nuevas DJs al cambiar de período.
--   **Flujo Automatizado**: Orquesta todo el proceso de ARBA con un solo clic, desde la autenticación hasta la generación del PDF.
+-   **Interfaz de Control Dual**: Permite tanto la **creación** como la **anulación** de retenciones a través de pestañas dedicadas.
+-   **Gestión de DJ Inteligente**: Para la creación, determina automáticamente la quincena correcta, reutiliza DJs abiertas y simula el cierre y apertura de nuevas DJs al cambiar de período.
+-   **Flujo Automatizado**: Orquesta todo el proceso de ARBA con un solo clic, desde la autenticación hasta la acción final (generación de PDF o anulación).
 -   **Configuración Centralizada**: Un panel de ajustes permite configurar todos los parámetros necesarios (credenciales, ambiente, URLs, etc.).
--   **Monitor de Progreso en Tiempo Real**: Muestra el estado de cada paso del proceso (Autenticación, Verificación de DJ, Alta, PDF).
+-   **Monitor de Progreso en Tiempo Real**: Muestra el estado de cada paso del proceso para ambas operaciones.
 -   **Manejo de Errores**: Exhibe mensajes de error claros si alguna etapa del proceso falla.
 
 ## 3. Gestión Automática de Declaraciones Juradas (DJ)
+
+(Esta lógica aplica al proceso de **creación** de comprobantes)
 
 Una de las características más importantes de este sistema es su capacidad para gestionar el ciclo de vida de las Declaraciones Juradas de forma automática, asegurando que cada retención se impute al período fiscal correcto.
 
@@ -34,12 +37,12 @@ El proceso es el siguiente:
 2.  **Verificación de DJ Existente**: El sistema consulta a la API de ARBA para ver si ya existe una DJ abierta para el CUIT y el período fiscal actual.
 
 3.  **Toma de Decisiones**:
-    -   **Si ya existe una DJ abierta**: El sistema la reutiliza, obteniendo su `idDj` para asociar la nueva retención. Esto evita crear múltiples DJs para un mismo período.
+    -   **Si ya existe una DJ abierta**: El sistema la reutiliza, obteniendo su `idDj` para asociar la nueva retención.
     -   **Si no existe una DJ**: Esto indica el inicio de un nuevo período fiscal. El sistema entonces:
-        1.  **Simula el Cierre de la DJ Anterior**: En un entorno real, la API Local buscaría la DJ del período anterior (ej., la primera quincena si ahora estamos en la segunda) y enviaría una solicitud a ARBA para cerrarla.
-        2.  **Abre una Nueva DJ**: Procede a crear una nueva Declaración Jurada para el período actual y utiliza el `idDj` recién generado.
+        1.  **Simula el Cierre de la DJ Anterior**: La API Local buscaría la DJ del período anterior y la cerraría.
+        2.  **Abre una Nueva DJ**: Procede a crear una nueva Declaración Jurada para el período actual.
 
-Este flujo automatizado elimina la necesidad de intervención manual para abrir y cerrar períodos, reduce errores y garantiza el cumplimiento con las normativas de ARBA.
+Este flujo automatizado elimina la necesidad de intervención manual para abrir y cerrar períodos y reduce errores.
 
 ## 4. Guía de Configuración
 
@@ -55,8 +58,7 @@ Antes de usar la aplicación, es crucial configurar todos los parámetros correc
     -   `Clave de Identificación Tributaria (CIT)`: La contraseña (CIT) asociada a ese CUIT.
 
 3.  **Período de DJ por Defecto**:
-    -   `Año`, `Mes`, `Quincena`: **Estos valores ahora se usan como referencia y pueden ser sobreescritos por la lógica automática de gestión de DJ.**
-    -   `ID de Actividad`: El código de actividad correspondiente (este sí se usa al crear una nueva DJ).
+    -   `Año`, `Mes`, `Quincena`, `ID de Actividad`: Usados como referencia o al crear una nueva DJ.
 
 4.  **Configuración de Integración Local**:
     -   `URL de API Local`: La URL completa del endpoint en tu servidor backend.
@@ -64,21 +66,28 @@ Antes de usar la aplicación, es crucial configurar todos los parámetros correc
 
 ## 5. Flujo de Trabajo y Uso
 
-1.  **Ingresar Nombre del Archivo**: Escribe el nombre exacto del archivo CSV (ej: `r0012345.csv`).
-2.  **Simular Lectura del Servidor**: Haz clic en "Seleccionar Archivo" y elige el mismo archivo CSV desde tu máquina.
-3.  **Iniciar Proceso**: Haz clic en **"Procesar Archivo"**.
-4.  **Monitorear Progreso**: La sección de estado se actualizará en tiempo real, mostrando el nuevo flujo:
-    -   `Llamando a API Local...`
-    -   `Paso 1/5: Autenticando con ARBA...`
-    -   `Paso 2/5: Verificando DJ abierta para el período actual...`
-    -   `Paso 3/5: Subiendo datos del comprobante...`
-    -   `Paso 4/5: Generando PDF del comprobante...`
-    -   `¡Proceso completado con éxito!`
-5.  **Ver Resultados**:
+### 5.1 Creación de un Comprobante
+
+1.  Selecciona la pestaña **"Crear Retención"**.
+2.  **Ingresar Nombre del Archivo**: Escribe el nombre exacto del archivo CSV (ej: `r0012345.csv`).
+3.  **Simular Lectura del Servidor**: Haz clic en "Seleccionar Archivo" y elige el mismo archivo CSV desde tu máquina.
+4.  **Iniciar Proceso**: Haz clic en **"Procesar Archivo"**.
+5.  **Monitorear Progreso**: La sección de estado se actualizará en tiempo real.
+6.  **Ver Resultados**:
     -   **Éxito**: Se mostrará un mensaje de éxito y un botón **"Descargar PDF"**.
     -   **Error**: Se mostrará un mensaje de error detallado.
 
-## 6. Formato del Archivo CSV
+### 5.2 Anulación de un Comprobante
+
+1.  Selecciona la pestaña **"Anular Retención"**.
+2.  **Ingresar ID del Comprobante**: Escribe el identificador numérico único del comprobante que deseas anular. Este ID se obtiene de ARBA al momento de la creación.
+3.  **Iniciar Anulación**: Haz clic en **"Anular Comprobante"**.
+4.  **Monitorear Progreso**: La sección de estado mostrará los pasos de autenticación y anulación.
+5.  **Ver Resultados**:
+    -   **Éxito**: Se mostrará un mensaje de confirmación, por ejemplo: "El comprobante [ID] ha sido anulado con éxito."
+    -   **Error**: Se mostrará un mensaje de error, por ejemplo: "No se puede anular un comprobante de una DJ ya cerrada."
+
+## 6. Formato del Archivo CSV (para Creación)
 
 El archivo CSV a procesar debe contener **una única retención** y no debe tener una fila de encabezado.
 
@@ -126,7 +135,7 @@ Abre una terminal, navega al directorio de tu proyecto y ejecuta:
 docker build -t sistema-arba .
 ```
 
-**3. Ejecutar el Contenedor Docker:**
+**3. Ejecutar el Contentor Docker:**
 Una vez construida la imagen, ejecuta el contenedor:
 ```bash
 docker run -p 8080:80 --name app-arba -d sistema-arba
