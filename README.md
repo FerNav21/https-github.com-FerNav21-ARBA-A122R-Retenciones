@@ -1,229 +1,252 @@
 # Sistema de Procesamiento Automatizado ARBA A-122R
 
-Este proyecto es una aplicación web de front-end diseñada para actuar como una interfaz de control para un sistema automatizado de gestión de retenciones A-122R de ARBA. Simula un flujo de trabajo empresarial en el que un sistema ERP (Planificación de Recursos Empresariales) interactúa de forma transparente con los servicios de ARBA a través de una API local (backend).
+## 1. Introducción y Visión General
 
-El objetivo principal es proporcionar una herramienta para configurar, disparar y monitorear los dos procesos clave: la **creación** y la **anulación** de comprobantes de retención, demostrando un flujo de trabajo de integración completo y robusto.
+Esta aplicación es una interfaz web diseñada para automatizar y simplificar la interacción con la API de Servicios A-122R de ARBA. Su objetivo principal es actuar como un **panel de control para un flujo de trabajo de backend automatizado**, simulando cómo un sistema ERP se integraría de forma transparente para procesar retenciones del Impuesto sobre los Ingresos Brutos.
 
-## Arquitectura del Sistema
+El sistema está diseñado para:
+1.  **Ser configurado** con las credenciales del agente y los parámetros de la API.
+2.  **Orquestar el ciclo de vida completo** de una retención a través de una API local simulada.
+3.  **Manejar automáticamente las Declaraciones Juradas (DJ)**, incluyendo la consulta, el cierre de períodos anteriores y la apertura de nuevos períodos.
+4.  **Proporcionar feedback en tiempo real** sobre cada paso del proceso.
 
-El sistema está diseñado en torno a tres componentes principales que interactúan entre sí:
+## 2. Arquitectura del Sistema
 
-1.  **ERP (El Cliente)**: Es el sistema de gestión de la empresa (simulado por nuestro ejemplo en COBOL). Es responsable de:
-    -   Generar el archivo `.csv` con los datos de la retención.
-    -   Realizar una llamada HTTP a la API Local para iniciar el proceso.
+El ecosistema completo se compone de tres partes:
 
-2.  **API Local (El Orquestador / Backend)**: Es un servicio que reside en la red local de la empresa. Su función es:
-    -   Recibir peticiones del ERP.
-    -   Leer los archivos `.csv` de una carpeta de red compartida.
-    -   Contener toda la lógica de negocio para interactuar con ARBA (autenticación, gestión de DJ, etc.).
-    -   Guardar los PDFs generados en la carpeta de red.
-    -   Responder al ERP con el resultado de la operación.
-    *(En esta aplicación, el servicio `services/localApi.ts` simula el comportamiento de esta API).*
+1.  **Sistema ERP (Ej: basado en COBOL)**: Es el sistema principal donde se registran las retenciones. Su única responsabilidad es generar un archivo `.csv` con los datos de la retención y llamar a la API Local.
+2.  **API Local (Backend)**: Es el corazón del sistema. Un servicio (no incluido en este proyecto, pero simulado) que reside en la red local del agente. Recibe la llamada del ERP, lee el archivo `.csv` de una carpeta compartida y orquesta todas las llamadas a la API de ARBA.
+3.  **Esta Aplicación Web (Frontend)**: Actúa como la interfaz de configuración y monitorización. Permite definir los parámetros de conexión, las credenciales y ejecutar manualmente el proceso para pruebas o contingencias.
 
-3.  **Interfaz Web (Este Proyecto)**: Es una aplicación de front-end que sirve como panel de control para:
-    -   Configurar las credenciales y parámetros del sistema.
-    -   Disparar manualmente los procesos de creación o anulación (simulando la llamada del ERP).
-    -   Monitorear el progreso de las operaciones en tiempo real.
+## 3. Flujo de Trabajo y Uso
 
----
+La aplicación se centra en un flujo de trabajo que imita una integración de backend.
 
-## Despliegue (Docker en Windows Server)
+### 3.1. Creación de una Retención
 
-La forma recomendada de desplegar esta interfaz web en un entorno de producción como Windows Server 2025 es a través de Docker. Esto asegura un entorno consistente y facilita la gestión.
+1.  **Generación del Archivo**: Desde el ERP, se genera un archivo `.csv` con un nombre en formato `8.3` (ej: `r0012345.csv`) y se deposita en una carpeta de red configurada.
+2.  **Llamada a la API Local**: El ERP invoca un *endpoint* de la API Local, pasándole el nombre del archivo a procesar.
+3.  **Proceso en la Interfaz Web**:
+    *   Navega a la pestaña **"Crear Retención"**.
+    *   Introduce el nombre del archivo (ej: `r0012345.csv`).
+    *   Selecciona el archivo `.csv` correspondiente desde tu máquina local (esto simula la lectura que haría el servidor desde la carpeta de red).
+    *   Haz clic en **"Iniciar Proceso"**.
+4.  **Ejecución Automatizada**: La aplicación simulará la llamada a la API Local, que ejecutará los siguientes pasos:
+    *   **Autenticación**: Obtiene un token de acceso de ARBA.
+    *   **Gestión de DJ**: Determina la quincena actual, busca una DJ abierta, cierra la del período anterior si es necesario y crea una nueva si no existe.
+    *   **Carga del Comprobante**: Envía los datos del `.csv` a la DJ correspondiente.
+    *   **Generación del PDF**: Solicita el comprobante en formato PDF.
+    *   **Resultado**: Muestra un mensaje de éxito con un enlace para descargar el PDF, o un mensaje de error específico.
+
+### 3.2. Anulación de un Comprobante
+
+1.  Navega a la pestaña **"Anular Retención"**.
+2.  Introduce el **ID del comprobante** que deseas anular.
+3.  Haz clic en **"Anular Comprobante"**.
+4.  El sistema llamará a la API Local, que se autenticará y enviará la solicitud de anulación a ARBA.
+
+### 3.3. Generación Manual de Tokens de Acceso
+
+Para propósitos de desarrollo o pruebas directas con la API de ARBA (usando herramientas como Postman), puedes generar un token de acceso manualmente:
+
+1.  Asegúrate de tener configurado el CUIT y la CIT en **Ajustes**.
+2.  Navega a la pestaña **"Generar Token"**.
+3.  Haz clic en **"Generar Token de Acceso"**.
+4.  El sistema solicitará un token al ambiente seleccionado y lo mostrará en pantalla, junto con su duración y un botón para copiarlo.
+
+## 4. Flujo de Autenticación (Obtención de Token)
+
+La aplicación maneja la autenticación con ARBA de forma automática. Esta sección detalla el proceso técnico subyacente, basado en el flujo **OAuth 2.0 Resource Owner Password Credentials Grant**.
+
+El proceso es el siguiente:
+
+1.  **Recopilación de Credenciales**: El sistema toma el **CUIT** (`username`) y la **CIT** (`password`) de los ajustes configurados por el usuario. El `client_id` y `client_secret`, que identifican a esta aplicación cliente ante ARBA, están preconfigurados en el código para este ejemplo.
+2.  **Solicitud del Token**: Se realiza una petición `POST` al *endpoint* de autenticación de ARBA correspondiente al ambiente seleccionado (Pruebas o Producción).
+3.  **Cuerpo de la Petición**: La petición envía los datos en formato `application/x-www-form-urlencoded` con los siguientes parámetros:
+    *   `grant_type`: `password`
+    *   `client_id`: El identificador de la aplicación cliente (ej: `arbanet-client`).
+    *   `client_secret`: La clave secreta de la aplicación cliente.
+    *   `username`: El CUIT del agente.
+    *   `password`: La CIT del agente.
+4.  **Respuesta del Servidor**: Si las credenciales son válidas, el servidor de ARBA responde con un objeto JSON que contiene el `access_token` de corta duración.
+5.  **Uso del Token**: La aplicación utiliza este token en el encabezado `Authorization` de todas las llamadas posteriores a la API de ARBA (ej: `Authorization: Bearer <token_recibido>`).
+
+### Ejemplo Manual con cURL (Ambiente de Pruebas)
+
+```bash
+curl -X POST https://login.test.arba.gov.ar/Auth/v1/Token \
+-H "Content-Type: application/x-www-form-urlencoded" \
+-d "grant_type=password" \
+-d "client_id=arbanet-client" \
+-d "client_secret=arbanet-secret" \
+-d "username=SU_CUIT_AQUI" \
+-d "password=SU_CIT_AQUI"
+```
+
+## 5. Formato del Archivo CSV
+
+El archivo `.csv` o `.txt` a procesar debe tener una estructura simple:
+-   **Una línea de encabezado** (será ignorada por el procesador).
+-   **Líneas de datos** donde cada línea representa un comprobante.
+-   Columnas separadas por comas (`,`).
+-   No debe contener comillas en los campos.
+
+**Estructura de las columnas:**
+`cuitContribuyente,sucursal,alicuota,baseImponible,importeRetencion,razonSocialContribuyente,fechaOperacion`
+
+**Ejemplo de contenido:**
+
+```csv
+cuit_contribuyente,sucursal,alicuota,base_imponible,importe_retencion,razon_social,fecha_operacion
+20304050601,1,2.5,10000.00,250.00,Empresa Ejemplo SRL,2024-07-18T10:30:00
+```
+
+## 6. Guía de Despliegue (Docker en Windows Server)
+
+Esta aplicación está diseñada para ser desplegada fácilmente como un contenedor de Docker.
 
 ### Prerrequisitos
--   Tener Docker Desktop o Docker Engine instalado y funcionando en su Windows Server.
--   Haber clonado o descargado todos los archivos de este proyecto en una carpeta del servidor.
+- Windows Server con Docker Desktop o Docker Engine instalado.
+- Los archivos de esta aplicación (`Dockerfile`, `docker-compose.yml`, `nginx.conf`, y el resto del código fuente).
 
 ### Pasos para el Despliegue
 
-1.  **Abrir una Terminal**: Abre PowerShell o el Símbolo del sistema (CMD) en la carpeta raíz del proyecto (donde se encuentra el archivo `docker-compose.yml`).
+1.  **Clonar o Copiar el Proyecto**: Asegúrate de tener todos los archivos del proyecto en una carpeta dentro de tu servidor (ej: `C:\apps\arba-frontend`).
 
-2.  **Construir y Ejecutar el Contenedor**: Ejecuta el siguiente comando. Docker se encargará de construir la imagen del servidor web y ponerlo en marcha en segundo plano.
+2.  **Abrir una Terminal**: Abre PowerShell o el Símbolo del sistema en tu servidor.
 
-    ```bash
+3.  **Navegar al Directorio del Proyecto**:
+    ```powershell
+    cd C:\apps\arba-frontend
+    ```
+
+4.  **Construir y Ejecutar el Contenedor**: Utiliza `docker-compose` para automatizar el proceso. Este comando leerá el archivo `docker-compose.yml`, construirá la imagen de Docker según las instrucciones del `Dockerfile` y la ejecutará como un contenedor.
+    ```powershell
     docker-compose up -d --build
     ```
+    -   `-d`: Ejecuta el contenedor en modo "detached" (en segundo plano).
+    -   `--build`: Fuerza la reconstrucción de la imagen si ha habido cambios.
 
-3.  **Verificar el Estado**: Puedes comprobar que el contenedor se está ejecutando correctamente con:
-
-    ```bash
-    docker-compose ps
+5.  **Verificar el Contenedor**: Puedes comprobar que el contenedor se está ejecutando correctamente con el siguiente comando:
+    ```powershell
+    docker ps
     ```
-    Deberías ver un servicio llamado `arba_frontend_app` con el estado `running`.
+    Deberías ver un contenedor llamado `arba_frontend_app` en la lista, con el estado "Up".
 
-4.  **Acceder a la Aplicación**: ¡Listo! La aplicación ahora está disponible en el navegador web accediendo a la siguiente URL:
+6.  **Acceder a la Aplicación**:
+    -   Abre un navegador web en el servidor o en cualquier máquina de la misma red.
+    -   Navega a `http://<IP_DEL_SERVIDOR>:8080`.
+    -   Deberías ver la interfaz de la aplicación lista para ser utilizada.
 
-    `http://localhost:8080`
+### Detener la Aplicación
 
-    *(Si estás accediendo desde otra máquina en la misma red, reemplaza `localhost` con la dirección IP del servidor).*
-
-### Gestión del Contenedor
--   **Para detener la aplicación**: `docker-compose down`
--   **Para reiniciar la aplicación**: `docker-compose restart`
-
----
-
-## Guía de Configuración
-
-Antes de utilizar la aplicación, es fundamental configurar los parámetros correctamente. Haz clic en el botón **Ajustes ⚙️** en la esquina superior derecha para abrir el panel de configuración.
-
--   **Ambiente de ARBA**: Elige entre `Pruebas (Test)` y `Producción`. Esto determina qué URLs de ARBA se utilizarán.
--   **Credenciales de Agente**:
-    -   `CUIT del Agente`: Tu Clave Única de Identificación Tributaria.
-    -   `Clave de Identificación Tributaria (CIT)`: Tu contraseña para los servicios de ARBA.
--   **Configuración de Integración Local**:
-    -   `URL de API Local`: La dirección de tu servicio de backend. El ejemplo COBOL y los scripts la utilizan para saber a dónde enviar la petición.
-    -   `Ruta de Carpeta en Red`: La ubicación de la carpeta compartida donde el ERP deposita los `.csv` y la API Local guarda los `.pdf`. Formato UNC de Windows (ej: `\\servidor\retenciones`).
-
-## Flujo de Trabajo y Uso
-
-La interfaz principal se divide en dos pestañas para las dos operaciones principales.
-
-### 1. Crear una Retención
-1.  **Nombre del Archivo**: Introduce el nombre del archivo `.csv` (ej: `r0012345.csv`).
-2.  **Seleccionar Archivo**: Selecciona el archivo CSV correspondiente de tu disco.
-3.  **Procesar Archivo**: Haz clic para iniciar el proceso. La aplicación llamará a la API Local simulada y mostrará el progreso.
-4.  **Resultado**: Si es exitoso, aparecerá un botón para **Descargar PDF**.
-
-### 2. Anular una Retención
-1.  **ID del Comprobante a Anular**: Introduce el identificador numérico del comprobante.
-2.  **Anular Comprobante**: Haz clic para iniciar la anulación.
-3.  **Resultado**: El panel de estado mostrará si la anulación fue exitosa.
-
-## Formato del Archivo CSV
-El archivo `.csv` debe contener una única línea sin encabezados, con 7 campos separados por comas.
-
-**Ejemplo:** `30112233445,1,2.5,10000.00,250.00,"Nombre Contribuyente SRL",2024-07-18T10:30:00`
-
-## Gestión Automática de Declaraciones Juradas (DJ)
-La API Local simulada gestiona el ciclo de vida de las Declaraciones Juradas de forma inteligente, determinando el período fiscal actual, cerrando la DJ anterior si es necesario y abriendo una nueva.
-
-## Integración con ERP (Ejemplo COBOL en Windows)
-
-A continuación se presenta un ejemplo de cómo un sistema ERP basado en COBOL y corriendo en Windows puede integrarse con este flujo.
-
-#### Paso 1: Programa COBOL para Generar el CSV y Llamar al Script
-Este programa (`generar_retencion.cbl`) se ejecutaría dentro del ERP justo después de que un usuario guarda una retención.
-
-**`erp-integration/generar_retencion.cbl`**
-```cobol
-       IDENTIFICATION DIVISION.
-       PROGRAM-ID. GENRET.
-       AUTHOR. ERP-System.
-      *----------------------------------------------------------------*
-      * Este programa simula la generación de un archivo de retención  *
-      * en formato CSV y luego llama a un script externo para          *
-      * enviarlo a la API Local de procesamiento de ARBA.              *
-      *----------------------------------------------------------------*
-       ENVIRONMENT DIVISION.
-       INPUT-OUTPUT SECTION.
-       FILE-CONTROL.
-           SELECT RETENCION-FILE ASSIGN TO DISK RET-FILE-PATH
-           ORGANIZATION IS LINE SEQUENTIAL.
-
-       DATA DIVISION.
-       FILE SECTION.
-       FD  RETENCION-FILE.
-       01  RETENCION-RECORD      PIC X(200).
-
-       WORKING-STORAGE SECTION.
-       01  WS-RETENCION-DATA.
-           05 WS-CUIT-CONTRIB      PIC X(11) VALUE '30112233445'.
-           05 WS-SUCURSAL          PIC 9(01) VALUE 1.
-           05 WS-ALICUOTA          PIC X(04) VALUE '2.50'.
-           05 WS-BASE-IMPONIBLE    PIC X(10) VALUE '10000.00'.
-           05 WS-IMPORTE-RET       PIC X(07) VALUE '250.00'.
-           05 WS-RAZON-SOCIAL      PIC X(26) VALUE 'Nombre Contribuyente SRL'.
-           05 WS-FECHA-OPERACION   PIC X(19) VALUE '2024-07-18T10:30:00'.
-       
-       01  WS-CSV-RECORD           PIC X(200).
-       01  WS-RET-NUMERO           PIC 9(07) VALUE 12345.
-       01  WS-FILE-NAME            PIC X(12).
-       01  RET-FILE-PATH           PIC X(60).
-       
-       01  COMMAND-STRING          PIC X(100).
-
-       PROCEDURE DIVISION.
-       MAIN-PROCEDURE.
-      *--- 1. Preparar el nombre del archivo (ej: r0012345.csv)
-           STRING "r"
-                  WS-RET-NUMERO DELIMITED BY SIZE
-                  ".csv"        DELIMITED BY SIZE
-             INTO WS-FILE-NAME.
-
-      *    Ruta de red en formato UNC para Windows
-           STRING "\\servidor-erp\retenciones\" DELIMITED BY SIZE
-                  WS-FILE-NAME                  DELIMITED BY SIZE
-             INTO RET-FILE-PATH.
-             
-      *--- 2. Construir el registro CSV
-           STRING WS-CUIT-CONTRIB      DELIMITED BY SIZE
-                  ","                  DELIMITED BY SIZE
-                  WS-SUCURSAL          DELIMITED BY SIZE
-                  ","                  DELIMITED BY SIZE
-                  WS-ALICUOTA          DELIMITED BY SIZE
-                  ","                  DELIMITED BY SIZE
-                  WS-BASE-IMPONIBLE    DELIMITED BY SIZE
-                  ","                  DELIMITED BY SIZE
-                  WS-IMPORTE-RET       DELIMITED BY SIZE
-                  ","                  DELIMITED BY SIZE
-                  '"'                  DELIMITED BY SIZE
-                  WS-RAZON-SOCIAL      DELIMITED BY SIZE
-                  '"'                  DELIMITED BY SIZE
-                  ","                  DELIMITED BY SIZE
-                  WS-FECHA-OPERACION   DELIMITED BY SIZE
-             INTO WS-CSV-RECORD.
-
-      *--- 3. Escribir el archivo CSV en la carpeta de red
-           OPEN OUTPUT RETENCION-FILE.
-           MOVE WS-CSV-RECORD TO RETENCION-RECORD.
-           WRITE RETENCION-RECORD.
-           CLOSE RETENCION-FILE.
-
-           DISPLAY "Archivo " WS-FILE-NAME " generado con éxito.".
-
-      *--- 4. Preparar y ejecutar el script para llamar a la API
-      *    Se asume que el sistema operativo es Windows.
-      *    Por lo tanto, se llama al script de batch (.bat).
-           STRING "llamar_api.bat " WS-FILE-NAME
-                  DELIMITED BY SIZE
-             INTO COMMAND-STRING.
-           
-           DISPLAY "Llamando a la API Local (Entorno Windows)...".
-           CALL "SYSTEM" USING COMMAND-STRING.
-
-           DISPLAY "Proceso finalizado.".
-           STOP RUN.
+Para detener el contenedor, navega al directorio del proyecto en la terminal y ejecuta:
+```powershell
+docker-compose down
 ```
 
-#### Paso 2: Script Batch para Llamar a la API Local
-Este script (`llamar_api.bat`) es invocado por el programa COBOL. Su única responsabilidad es tomar el nombre del archivo y hacer la llamada de red a la API Local. `curl.exe` viene incluido por defecto en Windows Server 2016 y versiones posteriores.
+## 7. Configuración de la Aplicación
 
-**`erp-integration/llamar_api.bat` (Para Windows)**
+Todos los parámetros se configuran a través de la interfaz gráfica, haciendo clic en el botón **"Ajustes"**.
+
+-   **Ambiente de ARBA**: Permite cambiar entre los *endpoints* de Pruebas y Producción.
+-   **Credenciales de Agente**: Aquí debes introducir el CUIT y la CIT del agente de retención.
+-   **Período de DJ por Defecto**: Valores que se usarán para crear nuevas Declaraciones Juradas.
+-   **Integración Local**:
+    -   **URL de API Local**: El *endpoint* del servicio de backend que orquesta el proceso.
+    -   **Ruta de Carpeta en Red**: La ruta UNC donde el ERP deposita los archivos `.csv`.
+
+## 8. Integración con ERP (Ejemplo COBOL)
+
+Para lograr una automatización completa, el sistema ERP debe generar el archivo `.csv` y llamar a la API Local. A continuación, se muestra un ejemplo conceptual en **RM/COBOL-85 para un entorno Windows**.
+
+### Flujo de Trabajo
+
+1.  **Programa COBOL (`generar_retencion.cbl`)**:
+    *   Se ejecuta cuando un usuario guarda una retención.
+    *   Recopila los datos de la retención.
+    *   Formatea y escribe el archivo `.csv` en una ruta de salida.
+    *   Utiliza la instrucción `CALL "SYSTEM"` para ejecutar un script `.bat`, pasándole el nombre del archivo como parámetro.
+2.  **Script Batch (`llamar_api.bat`)**:
+    *   Recibe el nombre del archivo del programa COBOL.
+    *   Utiliza una herramienta como `curl` para realizar la llamada `HTTP POST` a la API Local, enviando el nombre del archivo en formato JSON.
+
+### Ejemplo: `generar_retencion.cbl` (Conceptual)
+
+```cobol
+IDENTIFICATION DIVISION.
+PROGRAM-ID. GENRET.
+*... (Environment Division, etc.)
+DATA DIVISION.
+FILE-SECTION.
+FD  RET-FILE.
+01  RET-RECORD              PIC X(255).
+
+WORKING-STORAGE SECTION.
+01  WS-RET-DATA.
+    05 WS-CUIT-CONTRIB      PIC X(11).
+    05 FILLER               PIC X(1) VALUE ",".
+    *... (resto de los campos del CSV)
+    05 WS-FECHA-OPER        PIC X(19).
+
+01  WS-FILE-PATH            PIC X(100).
+01  WS-FILE-NAME            PIC X(12).
+01  WS-COMMAND              PIC X(200).
+01  WS-RET-NUMBER           PIC 9(8).
+
+PROCEDURE DIVISION.
+MAIN-LOGIC.
+    *--- 1. Obtener datos de la retención del ERP.
+    MOVE "20304050601"       TO WS-CUIT-CONTRIB.
+    MOVE "2024-07-18T10:30:00" TO WS-FECHA-OPER.
+    *... (mover el resto de los datos)
+    MOVE 12345              TO WS-RET-NUMBER.
+
+    *--- 2. Construir el nombre del archivo CSV.
+    STRING "r" FUNCTION ZEROFill(WS-RET-NUMBER) ".csv"
+        DELIMITED BY SIZE
+        INTO WS-FILE-NAME.
+    
+    STRING "C:\TEMP\" WS-FILE-NAME
+        DELIMITED BY SIZE
+        INTO WS-FILE-PATH.
+
+    *--- 3. Escribir el archivo CSV.
+    OPEN OUTPUT RET-FILE.
+    * Escribir encabezado (opcional, el parser lo salta)
+    STRING "cuit,...fecha" DELIMITED BY SIZE INTO RET-RECORD.
+    WRITE RET-RECORD.
+    * Escribir datos
+    MOVE WS-RET-DATA TO RET-RECORD.
+    WRITE RET-RECORD.
+    CLOSE RET-FILE.
+
+    *--- 4. Llamar al script para invocar la API.
+    STRING "llamar_api.bat " WS-FILE-NAME
+        DELIMITED BY SIZE
+        INTO WS-COMMAND.
+
+    CALL "SYSTEM" USING WS-COMMAND.
+
+    STOP RUN.
+```
+
+### Ejemplo: `llamar_api.bat`
+
 ```batch
 @echo off
-REM Script para llamar a la API Local de procesamiento de retenciones.
-REM Recibe el nombre del archivo como primer parámetro.
-
 SETLOCAL
 
-IF "%1"=="" (
-    ECHO Error: No se proporcionó un nombre de archivo.
-    ECHO Uso: llamar_api.bat nombre_archivo.csv
-    EXIT /B 1
-)
-
+REM El primer argumento (%1) es el nombre del archivo pasado desde COBOL
 SET FILENAME=%1
 SET API_URL="http://localhost:3000/api/process-file"
-SET JSON_PAYLOAD="{\"fileName\": \"%FILENAME%\"}"
 
-ECHO Llamando a la API en %API_URL% con el archivo %FILENAME%...
+echo Procesando archivo: %FILENAME%
 
-curl -X POST -H "Content-Type: application/json" -d %JSON_PAYLOAD% %API_URL%
-
-ECHO.
-ECHO Llamada a la API completada.
+REM Utilizar curl para llamar a la API Local
+curl -X POST %API_URL% ^
+-H "Content-Type: application/json" ^
+-d "{\"fileName\": \"%FILENAME%\"}"
 
 ENDLOCAL
 ```

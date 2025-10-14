@@ -2,7 +2,8 @@ import React, { createContext, useState, useContext, ReactNode } from 'react';
 
 export type Environment = 'test' | 'production';
 
-interface Settings {
+// FIX: Export the 'Settings' interface to make it available for import in other files.
+export interface Settings {
   environment: Environment;
   cuit: string;
   cit: string;

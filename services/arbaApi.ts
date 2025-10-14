@@ -1,208 +1,129 @@
-import { AuthCredentials, DJPayload, VoucherPayload, DJ, DJQuery } from '../types';
-import { endpoints, credentials } from '../config';
+import { getArbaApiConfig } from '../config';
 import { Environment } from '../contexts/SettingsContext';
+import { AuthCredentials, DJ, DJPayload, DJQuery, VoucherPayload } from '../types';
 
-// ==================================================================
-// REAL API IMPLEMENTATION - Conecta con los endpoints de ARBA
-// Esta versión es consciente del entorno (Pruebas/Producción).
-// ==================================================================
+interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
 
-/**
- * Maneja las respuestas de la API, parseando JSON o Blobs y lanzando errores estandarizados.
- * @param response La respuesta del objeto fetch.
- * @returns La data parseada (JSON, Blob, etc.).
- */
-const handleResponse = async (response: Response) => {
-  if (response.ok) {
-    const contentType = response.headers.get('Content-Type');
-    if (contentType?.includes('application/json')) {
-      // Manejar el caso de una respuesta vacía que de alguna manera tiene el content-type json
-      const text = await response.text();
-      return text ? JSON.parse(text) : { message: 'Operación exitosa.' };
-    }
-    if (contentType?.includes('application/pdf')) {
-      return response.blob();
-    }
-    // Si la respuesta es exitosa pero no tiene contenido (ej. 204 No Content para un DELETE)
-    return { message: 'Operación exitosa.' };
-  } else {
-    // Intenta leer el cuerpo del error para un mensaje más detallado.
-    const errorBody = await response.text();
-    let errorMessage = `Error ${response.status}: ${response.statusText}`;
-    try {
-      // ARBA podría devolver un error JSON estructurado.
-      const errorJson = JSON.parse(errorBody);
-      errorMessage = errorJson.message || errorJson.error_description || JSON.stringify(errorJson);
-    } catch (e) {
-      // Si el cuerpo no es JSON, usa el texto crudo si existe.
-      if (errorBody) {
-        errorMessage = errorBody;
-      }
-    }
-    throw new Error(errorMessage);
-  }
-};
-
-export const getAuthToken = async (
-  userCredentials: Omit<AuthCredentials, 'clientId' | 'clientSecret'>,
-  environment: Environment
-): Promise<string> => {
-  const envConfig = endpoints[environment];
-  const envCredentials = credentials[environment];
-  console.log(`Solicitando token para ambiente [${environment.toUpperCase()}]`);
-
+export const authenticateARBA = async (credentials: AuthCredentials, environment: Environment): Promise<string> => {
+  const { authUrl } = getArbaApiConfig(environment);
+  
   const params = new URLSearchParams();
   params.append('grant_type', 'password');
-  params.append('scope', 'openid');
-  params.append('client_id', envCredentials.clientId);
-  params.append('client_secret', envCredentials.clientSecret);
-  params.append('username', userCredentials.username);
-  params.append('password', userCredentials.password);
+  params.append('client_id', credentials.clientId);
+  params.append('client_secret', credentials.clientSecret);
+  params.append('username', credentials.username);
+  params.append('password', credentials.password);
 
-  const response = await fetch(envConfig.authTokenEndpoint, {
+  const response = await fetch(authUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: params,
   });
-  
-  const data = await handleResponse(response);
-  
-  if (!data?.access_token) {
-    throw new Error("No se recibió el 'access_token' en la respuesta de autenticación.");
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ message: 'Error de autenticación desconocido' }));
+    throw new Error(`Error de autenticación (${response.status}): ${errorData.error_description || errorData.message || 'Respuesta inválida del servidor'}`);
   }
 
-  console.log('Token obtenido con éxito.');
+  const data: AuthResponse = await response.json();
   return data.access_token;
 };
 
-// --- GESTIÓN DE DJ ---
+export const findOrCreateDJ = async (payload: DJPayload, token: string, environment: Environment): Promise<DJ> => {
+    const { apiUrl } = getArbaApiConfig(environment);
 
-/**
- * Consulta si existe una DJ para un período específico.
- */
-export const consultarDJ = async (params: DJQuery, token: string, environment: Environment): Promise<DJ[]> => {
-  console.log(`Consultando DJ en [${environment.toUpperCase()}] con parámetros:`, params);
-  const envConfig = endpoints[environment];
-  const url = new URL(`${envConfig.apiBaseUrl}/declaracionJurada`);
-  Object.entries(params).forEach(([key, value]) => url.searchParams.append(key, String(value)));
+    // First, try to find an existing DJ
+    const query: DJQuery = {
+        cuit: payload.cuit,
+        anio: payload.anio,
+        mes: payload.mes,
+        quincena: payload.quincena,
+    };
 
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-  
-  const data = await handleResponse(response);
-  return Array.isArray(data) ? data : [];
-};
+    const searchParams = new URLSearchParams(
+      Object.entries(query).map(([key, value]) => [key, String(value)])
+    );
 
-/**
- * Cierra una Declaración Jurada existente.
- */
-export const cerrarDJ = async (idDj: string, token: string, environment: Environment): Promise<void> => {
-    console.log(`Cerrando DJ [${idDj}] en [${environment.toUpperCase()}]`);
-    const envConfig = endpoints[environment];
-    const response = await fetch(`${envConfig.apiBaseUrl}/declaracionJurada/${idDj}/cerrar`, {
+    const findResponse = await fetch(`${apiUrl}/declaraciones-juradas?${searchParams.toString()}`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+        },
+    });
+
+    if (findResponse.ok) {
+        const djs: DJ[] = await findResponse.json();
+        if (djs.length > 0) {
+            // Assuming the first one is the correct one if multiple exist
+            return djs[0];
+        }
+    } else if (findResponse.status !== 404) {
+        // Handle errors other than "not found"
+        const errorData = await findResponse.json().catch(() => ({}));
+        throw new Error(`Error al buscar DJ (${findResponse.status}): ${errorData.message || 'Error desconocido'}`);
+    }
+
+    // If not found (status 404 or empty array), create a new one
+    const createResponse = await fetch(`${apiUrl}/declaraciones-juradas`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ estado: 'CERRADA' })
+        body: JSON.stringify(payload),
     });
-    await handleResponse(response);
-    console.log(`DJ [${idDj}] cerrada con éxito.`);
+
+    if (!createResponse.ok) {
+        const errorData = await createResponse.json().catch(() => ({}));
+        throw new Error(`Error al crear DJ (${createResponse.status}): ${errorData.message || 'Error desconocido'}`);
+    }
+
+    return createResponse.json();
 };
 
-/**
- * Inicia una nueva Declaración Jurada.
- */
-export const initiateDJ = async (payload: DJPayload, token: string, environment: Environment): Promise<DJ> => {
-  console.log(`Iniciando DJ en [${environment.toUpperCase()}] con payload:`, payload);
-  const envConfig = endpoints[environment];
+interface SubmitVoucherResponse {
+    id: string;
+}
 
-  const response = await fetch(`${envConfig.apiBaseUrl}/declaracionJurada`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
+export const submitVoucher = async (payload: VoucherPayload, token: string, environment: Environment): Promise<SubmitVoucherResponse> => {
+    const { apiUrl } = getArbaApiConfig(environment);
+    
+    // The API endpoint for vouchers expects an array of vouchers.
+    const response = await fetch(`${apiUrl}/declaraciones-juradas/${payload.idDj}/comprobantes`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify([payload]), // Wrap single voucher in an array
+    });
 
-  const djData = await handleResponse(response);
-  console.log('DJ iniciada con éxito:', djData);
-  return djData;
-};
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.message || (Array.isArray(errorData.errors) && errorData.errors.length > 0 && errorData.errors[0].descripcion) || 'Error desconocido';
+        throw new Error(`Error al cargar comprobante (${response.status}): ${message}`);
+    }
 
-// --- GESTIÓN DE COMPROBANTES ---
-
-/**
- * Sube un nuevo comprobante de retención.
- */
-export const uploadVoucher = async (payload: VoucherPayload, token: string, environment: Environment): Promise<{ idComprobante: string }> => {
-  console.log(`Subiendo comprobante en [${environment.toUpperCase()}] con payload:`, payload);
-  const envConfig = endpoints[environment];
-  
-  const response = await fetch(`${envConfig.apiBaseUrl}/comprobante`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const result = await handleResponse(response);
-  console.log('Comprobante subido con éxito. ID:', result.idComprobante);
-  return result;
-};
-
-/**
- * Obtiene el PDF de un comprobante.
- */
-export const getVoucherPDF = async (comprobanteId: string, token: string, environment: Environment): Promise<Blob> => {
-  console.log(`Solicitando PDF en [${environment.toUpperCase()}] para comprobante ${comprobanteId}`);
-  const envConfig = endpoints[environment];
-  
-  const url = new URL(`${envConfig.apiBaseUrl}/comprobantePdf`);
-  url.searchParams.append('comprobanteId', comprobanteId);
-
-  const response = await fetch(url.toString(), {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-
-  const blob = await handleResponse(response);
-  if (!(blob instanceof Blob)) {
-    throw new Error('La respuesta no fue un archivo PDF válido.');
-  }
-  console.log('PDF generado exitosamente.');
-  return blob;
-};
-
-/**
- * Anula (elimina) un comprobante de retención existente.
- */
-export const deleteVoucher = async (idComprobante: string, token: string, environment: Environment): Promise<{ message: string }> => {
-  console.log(`Anulando comprobante [${idComprobante}] en [${environment.toUpperCase()}]`);
-  const envConfig = endpoints[environment];
-  const url = new URL(`${envConfig.apiBaseUrl}/comprobante`);
-  // El manual especifica el parámetro como "ID", pero "comprobanteId" es más consistente con el resto de la API.
-  // Si esto falla, se debería probar con el parámetro "ID".
-  url.searchParams.append('ID', idComprobante); 
-  
-  const response = await fetch(url.toString(), {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
-  });
-
-  const result = await handleResponse(response);
-  console.log(`Comprobante [${idComprobante}] anulado con éxito.`);
-  return result;
+    const results = await response.json();
+    
+    // The response is also an array.
+    if (Array.isArray(results) && results.length > 0) {
+        const voucherResult = results[0];
+        if (voucherResult.estado && voucherResult.estado.toUpperCase() === 'RECHAZADO') {
+            const errorMessages = Array.isArray(voucherResult.errores) ? voucherResult.errores.map((e: any) => e.descripcion).join(', ') : 'Razón desconocida';
+            throw new Error(`Comprobante rechazado por ARBA: ${errorMessages}`);
+        }
+        if (voucherResult.idComprobante) {
+            return { id: voucherResult.idComprobante };
+        }
+    }
+    
+    throw new Error('Respuesta inesperada del servidor al cargar comprobante.');
 };
