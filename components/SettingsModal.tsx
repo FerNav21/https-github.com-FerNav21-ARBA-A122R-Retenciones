@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useSettings, Environment } from '../contexts/SettingsContext';
+import { getArbaApiConfig } from '../config';
 
 interface SettingsModalProps {
   onClose: () => void;
 }
+
+
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
   const settings = useSettings();
@@ -17,12 +20,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
     actividadId: settings.actividadId,
     localApiUrl: settings.localApiUrl,
     networkFolderPath: settings.networkFolderPath,
+    useCustomCredentials: settings.useCustomCredentials,     // ➕ NUEVO
+    customClientId: settings.customClientId,                 // ➕ NUEVO
+    customClientSecret: settings.customClientSecret,         // ➕ NUEVO
   });
 
+  const currentConfig = getArbaApiConfig(localSettings.environment as Environment);
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setLocalSettings(prev => ({ ...prev, [name]: value }));
-  };
+  const { name, value, type } = e.target;
+  const actualValue = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
+  setLocalSettings(prev => ({ ...prev, [name]: actualValue }));
+};
 
   const handleSave = () => {
     settings.setEnvironment(localSettings.environment as Environment);
@@ -66,6 +75,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
             <option value="production">Producción</option>
           </select>
         </div>
+    <div className="mt-3 p-3 bg-slate-100 rounded-md text-sm">
+     <p className="font-semibold text-slate-700">Endpoints actuales:</p>
+     <p className="text-slate-600 break-all"><strong>Auth:</strong> {currentConfig.authUrl}</p>
+     <p className="text-slate-600 break-all"><strong>API:</strong> {currentConfig.apiUrl}</p>
+   </div>
 
         {/* --- Sección de Credenciales --- */}
         <div className="mb-4 p-4 border rounded-lg">
@@ -73,7 +87,41 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
           {renderInput('CUIT del Agente', 'cuit', 'text', 'Ej: 20123456789')}
           {renderInput('Clave de Identificación Tributaria (CIT)', 'cit', 'password')}
         </div>
-        
+        {/* --- Sección de Credenciales de Cliente OAuth --- */}
+<div className="mb-4 p-4 border rounded-lg bg-amber-50">
+  <h3 className="font-semibold text-lg mb-3 text-slate-700">Credenciales de Cliente OAuth (Avanzado)</h3>
+  
+  <div className="mb-3 p-3 bg-white rounded-md text-sm border border-amber-200">
+    <p className="text-slate-700 mb-2">
+      <strong>Credenciales por defecto (proporcionadas por ARBA):</strong>
+    </p>
+    <p className="text-slate-600"><strong>Client ID:</strong> {currentConfig.clientId}</p>
+    <p className="text-slate-600"><strong>Client Secret:</strong> {currentConfig.clientSecret}</p>
+    <p className="text-amber-700 mt-2 text-xs">
+      ⚠️ Solo modifique estos valores si ARBA le proporcionó credenciales diferentes para su aplicación.
+    </p>
+  </div>
+
+  <div className="mb-3">
+    <label className="flex items-center">
+      <input
+        type="checkbox"
+        name="useCustomCredentials"
+        checked={localSettings.useCustomCredentials}
+        onChange={handleChange}
+        className="mr-2"
+      />
+      <span className="text-sm font-medium text-gray-700">Usar credenciales personalizadas</span>
+    </label>
+  </div>
+
+  {localSettings.useCustomCredentials && (
+    <div className="space-y-3">
+      {renderInput('Client ID personalizado', 'customClientId', 'text')}
+      {renderInput('Client Secret personalizado', 'customClientSecret', 'password')}
+    </div>
+  )}
+</div>
         {/* --- Sección de DJ --- */}
         <div className="mb-4 p-4 border rounded-lg">
           <h3 className="font-semibold text-lg mb-3 text-slate-700">Período de DJ por Defecto</h3>
@@ -81,7 +129,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ onClose }) => {
             {renderInput('Año', 'anio', 'text', 'Ej: 2024')}
             {renderInput('Mes', 'mes', 'text', 'Ej: 7')}
             {renderInput('Quincena', 'quincena', 'text', '1 o 2')}
-            {renderInput('ID de Actividad', 'actividadId', 'text', 'Ej: 123456')}
+            {renderInput('ID de Actividad', 'actividadId', 'text', 'Ej: 6')}
           </div>
         </div>
 

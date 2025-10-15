@@ -1,8 +1,7 @@
-import React, { createContext, useState, useContext, ReactNode } from 'react';
+import React, { createContext, useState, useContext, ReactNode, useEffect } from 'react';
 
 export type Environment = 'test' | 'production';
 
-// FIX: Export the 'Settings' interface to make it available for import in other files.
 export interface Settings {
   environment: Environment;
   cuit: string;
@@ -13,7 +12,11 @@ export interface Settings {
   actividadId: string;
   localApiUrl: string;
   networkFolderPath: string;
+  useCustomCredentials: boolean;      // ➕ NUEVO
+  customClientId: string;             // ➕ NUEVO
+  customClientSecret: string;         // ➕ NUEVO
 }
+
 
 interface SettingsContextState extends Settings {
   setEnvironment: (env: Environment) => void;
@@ -24,23 +27,45 @@ interface SettingsContextState extends Settings {
 const SettingsContext = createContext<SettingsContextState | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [settings, setSettings] = useState<Settings>({
-    environment: 'test',
-    cuit: '',
-    cit: '',
-    anio: new Date().getFullYear().toString(),
-    mes: (new Date().getMonth() + 1).toString(),
-    quincena: '1',
-    actividadId: '123456',
-    localApiUrl: 'http://localhost:3000/api/process-file',
-    networkFolderPath: '\\\\servidor\\archivos_erp\\retenciones\\',
+
+  const [settings, setSettings] = useState<Settings>(() => {
+    const savedSettings = localStorage.getItem('arba-settings');
+    if (savedSettings) {
+      try {
+        const parsedSettings = JSON.parse(savedSettings);
+        // migrations or validations can be added here if the settings structure changes over time
+        return parsedSettings;
+      } catch (error) {
+        console.error('Error parsing settings from localStorage', error);
+        // Return default settings if parsing fails
+      }
+    }
+    return {
+      environment: 'test',
+      cuit: '',
+      cit: '',
+      anio: new Date().getFullYear().toString(),
+      mes: (new Date().getMonth() + 1).toString(),
+      quincena: '0',
+      actividadId: '6',
+
+      networkFolderPath: '\\\\servidor\\archivos_erp\\retenciones\\',
+      useCustomCredentials: false,      // ➕ NUEVO
+      customClientId: '',               // ➕ NUEVO
+      customClientSecret: '',           // ➕ NUEVO
+    };
   });
+
+  useEffect(() => {
+    localStorage.setItem('arba-settings', JSON.stringify(settings));
+  }, [settings]);
+
 
   const setEnvironment = (env: Environment) => {
     setSettings(s => ({ ...s, environment: env }));
   };
 
-  const updateSetting = (key: keyof Omit<Settings, 'environment'>, value: string) => {
+  const updateSetting = (key: keyof Omit<Settings, 'environment'>, value: string | boolean) => {
     setSettings(s => ({ ...s, [key]: value }));
   };
   

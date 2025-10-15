@@ -8,8 +8,13 @@ interface AuthResponse {
   expires_in: number;
 }
 
-export const authenticateARBA = async (credentials: AuthCredentials, environment: Environment): Promise<string> => {
-  const { authUrl } = getArbaApiConfig(environment);
+export const authenticateARBA = async (
+  credentials: AuthCredentials, 
+  environment: Environment,
+  customCredentials?: { clientId?: string; clientSecret?: string }
+): Promise<string> => {
+  const config = getArbaApiConfig(environment, customCredentials);
+
   
   const params = new URLSearchParams();
   params.append('grant_type', 'password');
@@ -17,8 +22,9 @@ export const authenticateARBA = async (credentials: AuthCredentials, environment
   params.append('client_secret', credentials.clientSecret);
   params.append('username', credentials.username);
   params.append('password', credentials.password);
+  params.append('scope', 'openid');  // ➕ NUEVO - Requerido según manual
 
-  const response = await fetch(authUrl, {
+  const response = await fetch(config.authUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -35,22 +41,57 @@ export const authenticateARBA = async (credentials: AuthCredentials, environment
   return data.access_token;
 };
 
-export const findOrCreateDJ = async (payload: DJPayload, token: string, environment: Environment): Promise<DJ> => {
+const getPreviousPeriod = (period: { anio: number; mes: number; quincena: number }) => {
+    let { anio, mes, quincena } = period;
+    if (quincena === 2) {
+        quincena = 1;
+    } else {
+        quincena = 2;
+        if (mes === 1) {
+            mes = 12;
+            anio -= 1;
+        } else {
+            mes -= 1;
+        }
+    }
+    return { anio, mes, quincena };
+};
+
+export const closeDJ = async (idDj: string, token: string, environment: Environment): Promise<void> => {
     const { apiUrl } = getArbaApiConfig(environment);
+    const response = await fetch(`${apiUrl}/declaraciones-juradas/${idDj}/cierre`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+    });
 
-    // First, try to find an existing DJ
-    const query: DJQuery = {
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Error al cerrar DJ (${response.status}): ${errorData.message || 'Error desconocido'}`);
+    }
+};
+
+export const findOrCreateDJ = async (
+  payload: DJPayload, 
+  token: string, 
+  environment: Environment,
+  customCredentials?: { clientId?: string; clientSecret?: string }
+): Promise<DJ> => {
+    const config = getArbaApiConfig(environment, customCredentials);
+
+    // ✅ Endpoint según manual: POST /declaracionJurada
+
+    // If no open DJ is found for the current period, check and close the previous period's DJ
+    const previousPeriod = getPreviousPeriod(payload);
+    const previousPeriodQuery: DJQuery = {
         cuit: payload.cuit,
-        anio: payload.anio,
-        mes: payload.mes,
-        quincena: payload.quincena,
+        ...previousPeriod,
     };
-
-    const searchParams = new URLSearchParams(
-      Object.entries(query).map(([key, value]) => [key, String(value)])
+    const prevSearchParams = new URLSearchParams(
+        Object.entries(previousPeriodQuery).map(([key, value]) => [key, String(value)])
     );
-
-    const findResponse = await fetch(`${apiUrl}/declaraciones-juradas?${searchParams.toString()}`, {
+    const findPrevResponse = await fetch(`${config.apiUrl}/declaraciones-juradas?${prevSearchParams.toString()}`, {
         method: 'GET',
         headers: {
             'Authorization': `Bearer ${token}`,
@@ -58,20 +99,16 @@ export const findOrCreateDJ = async (payload: DJPayload, token: string, environm
         },
     });
 
-    if (findResponse.ok) {
-        const djs: DJ[] = await findResponse.json();
-        if (djs.length > 0) {
-            // Assuming the first one is the correct one if multiple exist
-            return djs[0];
+    if (findPrevResponse.ok) {
+        const prevDjs: DJ[] = await findPrevResponse.json();
+        const openPrevDJ = prevDjs.find(dj => dj.estado !== 'CERRADA');
+        if (openPrevDJ) {
+            await closeDJ(openPrevDJ.idDj, token, environment);
         }
-    } else if (findResponse.status !== 404) {
-        // Handle errors other than "not found"
-        const errorData = await findResponse.json().catch(() => ({}));
-        throw new Error(`Error al buscar DJ (${findResponse.status}): ${errorData.message || 'Error desconocido'}`);
     }
 
-    // If not found (status 404 or empty array), create a new one
-    const createResponse = await fetch(`${apiUrl}/declaraciones-juradas`, {
+    // Now, create a new one for the current period
+    const createResponse = await fetch(`${config.apiUrl}/declaracionJurada`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
@@ -82,27 +119,51 @@ export const findOrCreateDJ = async (payload: DJPayload, token: string, environm
 
     if (!createResponse.ok) {
         const errorData = await createResponse.json().catch(() => ({}));
-        throw new Error(`Error al crear DJ (${createResponse.status}): ${errorData.message || 'Error desconocido'}`);
+       const message = errorData.message || 'Error desconocido';
+    
+    // ✅ Verificar si ya existe una DJ para el período
+    if (message.includes('Posee una DJ iniciada')) {
+        throw new Error('DJ_YA_EXISTE: ' + message);
     }
-
+    
+    throw new Error(`Error al crear DJ (${createResponse.status}): ${message}`);
+}
+  if (!createResponse.ok) {
+    const errorData = await createResponse.json().catch(() => ({}));
+    const message = errorData.message || 'Error desconocido';
+    
+    // ✅ Verificar si ya existe una DJ para el período
+    if (message.includes('Posee una DJ iniciada')) {
+        throw new Error('DJ_YA_EXISTE: ' + message);
+    }
+    
+    throw new Error(`Error al crear DJ (${createResponse.status}): ${message}`);
+  }
     return createResponse.json();
 };
-
 interface SubmitVoucherResponse {
     id: string;
 }
+ 
 
-export const submitVoucher = async (payload: VoucherPayload, token: string, environment: Environment): Promise<SubmitVoucherResponse> => {
-    const { apiUrl } = getArbaApiConfig(environment);
+
+export const submitVoucher = async (
+  payload: VoucherPayload, 
+  token: string, 
+  environment: Environment,
+  customCredentials?: { clientId?: string; clientSecret?: string }
+): Promise<SubmitVoucherResponse> => {
+    const config = getArbaApiConfig(environment, customCredentials);
     
-    // The API endpoint for vouchers expects an array of vouchers.
-    const response = await fetch(`${apiUrl}/declaraciones-juradas/${payload.idDj}/comprobantes`, {
+    // ✅ Endpoint según manual: POST /comprobante
+    const response = await fetch(`${config.apiUrl}/comprobante`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify([payload]), // Wrap single voucher in an array
+        body: JSON.stringify(payload), // ✅ Sin array, objeto directo
+      
     });
 
     if (!response.ok) {
@@ -111,19 +172,64 @@ export const submitVoucher = async (payload: VoucherPayload, token: string, envi
         throw new Error(`Error al cargar comprobante (${response.status}): ${message}`);
     }
 
-    const results = await response.json();
+    const result = await response.json();
+
+// ✅ Verificar si el comprobante fue observado (no se da de alta)
+if (result.observado === true) {
+    throw new Error(`Comprobante observado: ${result.mensaje || 'La alícuota no corresponde'}`);
+}
+
+if (result.id || result.idComprobante) {
+    return { id: result.id || result.idComprobante };
+}
+
+throw new Error('Respuesta inesperada del servidor al cargar comprobante.');
+
+};
+export const deleteVoucher = async (
+  comprobanteId: string, 
+  token: string, 
+  environment: Environment,
+  customCredentials?: { clientId?: string; clientSecret?: string }
+): Promise<void> => {
+    const config = getArbaApiConfig(environment, customCredentials);
     
-    // The response is also an array.
-    if (Array.isArray(results) && results.length > 0) {
-        const voucherResult = results[0];
-        if (voucherResult.estado && voucherResult.estado.toUpperCase() === 'RECHAZADO') {
-            const errorMessages = Array.isArray(voucherResult.errores) ? voucherResult.errores.map((e: any) => e.descripcion).join(', ') : 'Razón desconocida';
-            throw new Error(`Comprobante rechazado por ARBA: ${errorMessages}`);
-        }
-        if (voucherResult.idComprobante) {
-            return { id: voucherResult.idComprobante };
-        }
+    // Endpoint según manual: DELETE /comprobante?ID={id}
+    const response = await fetch(`${config.apiUrl}/comprobante?ID=${comprobanteId}`, {
+        method: 'DELETE',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.message || 'Error desconocido';
+        throw new Error(`Error al eliminar comprobante (${response.status}): ${message}`);
     }
+};
+
+export const getVoucherPDF = async (
+  comprobanteId: string, 
+  token: string, 
+  environment: Environment,
+  customCredentials?: { clientId?: string; clientSecret?: string }
+): Promise<Blob> => {
+    const config = getArbaApiConfig(environment, customCredentials);
     
-    throw new Error('Respuesta inesperada del servidor al cargar comprobante.');
+    // Endpoint según manual: GET /comprobantePdf?comprobante={id}
+    const response = await fetch(`${config.apiUrl}/comprobantePdf?comprobante=${comprobanteId}`, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${token}`,
+        },
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const message = errorData.message || 'Error desconocido';
+        throw new Error(`Error al obtener PDF (${response.status}): ${message}`);
+    }
+
+    return response.blob();
 };

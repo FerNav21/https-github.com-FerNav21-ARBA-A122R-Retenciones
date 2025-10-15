@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
 import { DJ, VoucherData, VoucherResult, VoucherPayload } from '../types';
 import * as arbaApi from '../services/arbaApi';
+import { getArbaApiConfig } from '../config';
 
 import Stepper from './Stepper';
 import Phase1Auth from './Phase1Auth';
@@ -111,32 +112,49 @@ const LocalFileProcessor: React.FC = () => {
         let obtainedDj: DJ;
         
         try {
-            // Phase 1: Authentication
-            setPhase('auth');
-            setCurrentStep(0);
-            token = await arbaApi.authenticateARBA({
-                // These should be provided by ARBA for your application
-                clientId: 'arbanet-client',
-                clientSecret: 'arbanet-secret',
-                username: settings.cuit,
-                password: settings.cit,
-            }, settings.environment);
+          // Phase 1: Authentication
+setPhase('auth');
+setCurrentStep(0);
+
+// ✅ Obtener credenciales según configuración
+const customCreds = settings.useCustomCredentials 
+  ? { clientId: settings.customClientId, clientSecret: settings.customClientSecret }
+  : undefined;
+
+const config = getArbaApiConfig(settings.environment, customCreds);
+
+token = await arbaApi.authenticateARBA({
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    username: settings.cuit,
+    password: settings.cit,
+}, settings.environment, customCreds);
 
             // Phase 2: Get or Create DJ
             setPhase('dj');
             setCurrentStep(1);
-            obtainedDj = await arbaApi.findOrCreateDJ({
-                cuit: settings.cuit,
-                anio: parseInt(settings.anio, 10),
-                mes: parseInt(settings.mes, 10),
-                quincena: parseInt(settings.quincena, 10),
-                actividadId: settings.actividadId,
-            }, token, settings.environment);
+
+try {
+    obtainedDj = await arbaApi.findOrCreateDJ({
+        cuit: settings.cuit,
+        anio: parseInt(settings.anio, 10),
+        mes: parseInt(settings.mes, 10),
+        quincena: parseInt(settings.quincena, 10),
+        actividadId: settings.actividadId,
+    }, token, settings.environment, customCreds);
+} catch (djError: any) {
+    if (djError.message.includes('DJ_YA_EXISTE')) {
+        throw new Error('La DJ ya existe para este período. El manual no especifica cómo obtener el ID de una DJ existente. Contacte con soporte de ARBA.');
+    }
+    throw djError;
+}
+
             setDj(obtainedDj);
 
             // Phase 3: Submit Vouchers
             setPhase('voucher');
             setCurrentStep(2);
+
             const newResults: VoucherResult[] = [];
             for (let i = 0; i < parsedVouchers.length; i++) {
                 const voucher = parsedVouchers[i];
@@ -147,7 +165,8 @@ const LocalFileProcessor: React.FC = () => {
                         cuitAgente: settings.cuit,
                         mes: obtainedDj.mes,
                     };
-                    const result = await arbaApi.submitVoucher(voucherPayload, token, settings.environment);
+
+                   const result = await arbaApi.submitVoucher(voucherPayload, token, settings.environment, customCreds);
                     newResults.push({
                         status: 'success',
                         message: `Comprobante ID: ${result.id}`,

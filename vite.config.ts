@@ -8,6 +8,26 @@ export default defineConfig(({ mode }) => {
       server: {
         port: 3000,
         host: '0.0.0.0',
+        proxy: {
+          '/arba': {
+            target: 'https://dfe.test.arba.gov.ar/ARBANet.Retenciones/v1',
+            changeOrigin: true,
+            secure: false,
+            rewrite: (path) => path.replace(/^\/arba/, ''),
+          },
+          '/auth': {
+            target: 'https://login.test.arba.gov.ar/Auth/v1/Token',
+            changeOrigin: true,
+            secure: false,
+            rewrite: (path) => path.replace(/^\/auth/, ''),
+            onProxyReq(proxyReq, req, res) {
+              console.log('--> PROXYING AUTH REQUEST:', req.method, req.url);
+            },
+            onProxyRes(proxyRes, req, res) {
+              console.log('<-- PROXY AUTH RESPONSE:', proxyRes.statusCode, proxyRes.statusMessage);
+            },
+          },
+        },
       },
       plugins: [react()],
       define: {
