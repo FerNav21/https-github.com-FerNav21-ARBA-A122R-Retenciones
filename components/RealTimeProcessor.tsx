@@ -1,5 +1,17 @@
 import React from 'react';
 
+/**
+ * @component RealTimeProcessor
+ * @description
+ * Un componente marcador de posición para la funcionalidad de "Procesamiento en Tiempo Real".
+ *
+ * Esta característica está planificada para el futuro y podría implicar una
+ * integración más directa o una interfaz para la entrada manual de datos.
+ * Actualmente, solo muestra un mensaje indicando que la funcionalidad
+ * no está implementada.
+ *
+ * @returns {JSX.Element} El componente renderizado.
+ */
 const RealTimeProcessor: React.FC = () => {
     return (
         <div>

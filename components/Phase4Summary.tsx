@@ -1,10 +1,27 @@
 import React from 'react';
 import { VoucherResult } from '../types';
 
+/**
+ * @interface Phase4SummaryProps
+ * @description Define las propiedades para el componente `Phase4Summary`.
+ * @property {VoucherResult[]} results - Un array con los resultados del procesamiento de cada comprobante.
+ */
 interface Phase4SummaryProps {
   results: VoucherResult[];
 }
 
+/**
+ * @component Phase4Summary
+ * @description
+ * Componente visual para la cuarta y última fase: el resumen del procesamiento.
+ *
+ * Muestra un recuento de los comprobantes que se procesaron con éxito y los que
+ * fallaron. Si hubo errores, muestra una lista detallada con el CUIT del
+ * contribuyente y el mensaje de error devuelto por la API.
+ *
+ * @param {Phase4SummaryProps} props - Las propiedades del componente.
+ * @returns {JSX.Element} El componente renderizado.
+ */
 const Phase4Summary: React.FC<Phase4SummaryProps> = ({ results }) => {
   const successCount = results.filter(r => r.status === 'success').length;
   const errorCount = results.filter(r => r.status === 'error').length;

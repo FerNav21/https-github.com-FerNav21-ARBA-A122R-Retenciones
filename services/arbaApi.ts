@@ -2,12 +2,30 @@ import { getArbaApiConfig } from '../config';
 import { Environment } from '../contexts/SettingsContext';
 import { AuthCredentials, DJ, DJPayload, DJQuery, VoucherPayload } from '../types';
 
+/**
+ * @interface AuthResponse
+ * @description Define la estructura de la respuesta del endpoint de autenticación de ARBA.
+ * @property {string} access_token - El token de acceso para realizar solicitudes autorizadas.
+ * @property {string} token_type - El tipo de token (generalmente 'Bearer').
+ * @property {number} expires_in - El tiempo en segundos hasta que el token expire.
+ */
 interface AuthResponse {
   access_token: string;
   token_type: string;
   expires_in: number;
 }
 
+/**
+ * @function authenticateARBA
+ * @description Autentica a un usuario contra la API de ARBA para obtener un token de acceso.
+ * @param {AuthCredentials} credentials - Las credenciales del usuario (clientId, clientSecret, usuario, contraseña).
+ * @param {Environment} environment - El entorno de destino (ej: 'test', 'prod').
+ * @param {object} [customCredentials] - Credenciales personalizadas para anular la configuración por defecto.
+ * @param {string} [customCredentials.clientId] - ID de cliente personalizado.
+ * @param {string} [customCredentials.clientSecret] - Secreto de cliente personalizado.
+ * @returns {Promise<string>} Una promesa que se resuelve con el token de acceso.
+ * @throws {Error} Si la autenticación falla.
+ */
 export const authenticateARBA = async (
   credentials: AuthCredentials, 
   environment: Environment,
@@ -22,7 +40,7 @@ export const authenticateARBA = async (
   params.append('client_secret', credentials.clientSecret);
   params.append('username', credentials.username);
   params.append('password', credentials.password);
-  params.append('scope', 'openid');  // ➕ NUEVO - Requerido según manual
+  params.append('scope', 'openid');
 
   const response = await fetch(config.authUrl, {
     method: 'POST',
@@ -41,6 +59,16 @@ export const authenticateARBA = async (
   return data.access_token;
 };
 
+/**
+ * @function getPreviousPeriod
+ * @description Calcula el período (año, mes, quincena) anterior al proporcionado.
+ * @private
+ * @param {object} period - El período actual.
+ * @param {number} period.anio - El año del período actual.
+ * @param {number} period.mes - El mes del período actual.
+ * @param {number} period.quincena - La quincena del período actual (1 o 2).
+ * @returns {object} Un objeto con el año, mes y quincena del período anterior.
+ */
 const getPreviousPeriod = (period: { anio: number; mes: number; quincena: number }) => {
     let { anio, mes, quincena } = period;
     if (quincena === 2) {
@@ -57,6 +85,15 @@ const getPreviousPeriod = (period: { anio: number; mes: number; quincena: number
     return { anio, mes, quincena };
 };
 
+/**
+ * @function closeDJ
+ * @description Cierra una Declaración Jurada (DJ) existente en la API de ARBA.
+ * @param {string} idDj - El ID de la DJ a cerrar.
+ * @param {string} token - El token de acceso de autenticación.
+ * @param {Environment} environment - El entorno de destino.
+ * @returns {Promise<void>} Una promesa que se resuelve cuando la DJ se ha cerrado con éxito.
+ * @throws {Error} Si no se puede cerrar la DJ.
+ */
 export const closeDJ = async (idDj: string, token: string, environment: Environment): Promise<void> => {
     const { apiUrl } = getArbaApiConfig(environment);
     const response = await fetch(`${apiUrl}/declaraciones-juradas/${idDj}/cierre`, {
@@ -72,6 +109,16 @@ export const closeDJ = async (idDj: string, token: string, environment: Environm
     }
 };
 
+/**
+ * @function findOrCreateDJ
+ * @description Busca una DJ para el período actual. Si no existe, cierra la del período anterior (si está abierta) y crea una nueva.
+ * @param {DJPayload} payload - Los datos necesarios para crear la DJ.
+ * @param {string} token - El token de acceso de autenticación.
+ * @param {Environment} environment - El entorno de destino.
+ * @param {object} [customCredentials] - Credenciales personalizadas para anular la configuración por defecto.
+ * @returns {Promise<DJ>} Una promesa que se resuelve con la DJ encontrada o creada.
+ * @throws {Error} Si ocurre un error durante el proceso.
+ */
 export const findOrCreateDJ = async (
   payload: DJPayload, 
   token: string, 
@@ -80,9 +127,6 @@ export const findOrCreateDJ = async (
 ): Promise<DJ> => {
     const config = getArbaApiConfig(environment, customCredentials);
 
-    // ✅ Endpoint según manual: POST /declaracionJurada
-
-    // If no open DJ is found for the current period, check and close the previous period's DJ
     const previousPeriod = getPreviousPeriod(payload);
     const previousPeriodQuery: DJQuery = {
         cuit: payload.cuit,
@@ -107,7 +151,6 @@ export const findOrCreateDJ = async (
         }
     }
 
-    // Now, create a new one for the current period
     const createResponse = await fetch(`${config.apiUrl}/declaracionJurada`, {
         method: 'POST',
         headers: {
@@ -121,7 +164,6 @@ export const findOrCreateDJ = async (
         const errorData = await createResponse.json().catch(() => ({}));
        const message = errorData.message || 'Error desconocido';
     
-    // ✅ Verificar si ya existe una DJ para el período
     if (message.includes('Posee una DJ iniciada')) {
         throw new Error('DJ_YA_EXISTE: ' + message);
     }
@@ -132,7 +174,6 @@ export const findOrCreateDJ = async (
     const errorData = await createResponse.json().catch(() => ({}));
     const message = errorData.message || 'Error desconocido';
     
-    // ✅ Verificar si ya existe una DJ para el período
     if (message.includes('Posee una DJ iniciada')) {
         throw new Error('DJ_YA_EXISTE: ' + message);
     }
@@ -141,12 +182,26 @@ export const findOrCreateDJ = async (
   }
     return createResponse.json();
 };
+
+/**
+ * @interface SubmitVoucherResponse
+ * @description Define la estructura de la respuesta al enviar un comprobante.
+ * @property {string} id - El ID del comprobante creado o procesado.
+ */
 interface SubmitVoucherResponse {
     id: string;
 }
  
-
-
+/**
+ * @function submitVoucher
+ * @description Envía un comprobante a la API de ARBA para ser procesado y añadido a una DJ.
+ * @param {VoucherPayload} payload - Los datos del comprobante a enviar.
+ * @param {string} token - El token de acceso de autenticación.
+ * @param {Environment} environment - El entorno de destino.
+ * @param {object} [customCredentials] - Credenciales personalizadas.
+ * @returns {Promise<SubmitVoucherResponse>} Una promesa que se resuelve con el ID del comprobante.
+ * @throws {Error} Si el envío falla o el comprobante es observado.
+ */
 export const submitVoucher = async (
   payload: VoucherPayload, 
   token: string, 
@@ -155,15 +210,13 @@ export const submitVoucher = async (
 ): Promise<SubmitVoucherResponse> => {
     const config = getArbaApiConfig(environment, customCredentials);
     
-    // ✅ Endpoint según manual: POST /comprobante
     const response = await fetch(`${config.apiUrl}/comprobante`, {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload), // ✅ Sin array, objeto directo
-      
+        body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
@@ -174,7 +227,6 @@ export const submitVoucher = async (
 
     const result = await response.json();
 
-// ✅ Verificar si el comprobante fue observado (no se da de alta)
 if (result.observado === true) {
     throw new Error(`Comprobante observado: ${result.mensaje || 'La alícuota no corresponde'}`);
 }
@@ -186,6 +238,17 @@ if (result.id || result.idComprobante) {
 throw new Error('Respuesta inesperada del servidor al cargar comprobante.');
 
 };
+
+/**
+ * @function deleteVoucher
+ * @description Elimina un comprobante previamente enviado a la API de ARBA.
+ * @param {string} comprobanteId - El ID del comprobante a eliminar.
+ * @param {string} token - El token de acceso de autenticación.
+ * @param {Environment} environment - El entorno de destino.
+ * @param {object} [customCredentials] - Credenciales personalizadas.
+ * @returns {Promise<void>} Una promesa que se resuelve cuando el comprobante se ha eliminado.
+ * @throws {Error} Si la eliminación falla.
+ */
 export const deleteVoucher = async (
   comprobanteId: string, 
   token: string, 
@@ -194,7 +257,6 @@ export const deleteVoucher = async (
 ): Promise<void> => {
     const config = getArbaApiConfig(environment, customCredentials);
     
-    // Endpoint según manual: DELETE /comprobante?ID={id}
     const response = await fetch(`${config.apiUrl}/comprobante?ID=${comprobanteId}`, {
         method: 'DELETE',
         headers: {
@@ -209,6 +271,16 @@ export const deleteVoucher = async (
     }
 };
 
+/**
+ * @function getVoucherPDF
+ * @description Obtiene la representación en PDF de un comprobante desde la API de ARBA.
+ * @param {string} comprobanteId - El ID del comprobante para el que se generará el PDF.
+ * @param {string} token - El token de acceso de autenticación.
+ * @param {Environment} environment - El entorno de destino.
+ * @param {object} [customCredentials] - Credenciales personalizadas.
+ * @returns {Promise<Blob>} Una promesa que se resuelve con el PDF del comprobante como un objeto Blob.
+ * @throws {Error} Si no se puede obtener el PDF.
+ */
 export const getVoucherPDF = async (
   comprobanteId: string, 
   token: string, 
@@ -217,7 +289,6 @@ export const getVoucherPDF = async (
 ): Promise<Blob> => {
     const config = getArbaApiConfig(environment, customCredentials);
     
-    // Endpoint según manual: GET /comprobantePdf?comprobante={id}
     const response = await fetch(`${config.apiUrl}/comprobantePdf?comprobante=${comprobanteId}`, {
         method: 'GET',
         headers: {

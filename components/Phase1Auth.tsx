@@ -1,5 +1,16 @@
 import React from 'react';
 
+/**
+ * @component Phase1Auth
+ * @description
+ * Componente visual que se muestra durante la primera fase del proceso: la autenticación.
+ *
+ * Renderiza un indicador de carga (spinner) y un mensaje de texto para informar
+ * al usuario que la aplicación se está comunicando con los servicios de ARBA
+ * para obtener un token de acceso.
+ *
+ * @returns {JSX.Element} El componente renderizado.
+ */
 const Phase1Auth: React.FC = () => {
   return (
     <div className="flex items-center">
