@@ -6,23 +6,34 @@ interface ArbaApiConfig {
   clientId: string;
   clientSecret: string;
 }
+const USE_PROXY = false; // Cambiar según necesidad
 
 const arbaConfig: Record<Environment, ArbaApiConfig> = {
   test: {
     // ✅ Endpoints corregidos según Manual de Integración Técnica A122R
-    apiUrl: 'https://app.test.arba.gov.ar/a122rSrv/api/external',
-    authUrl: 'https://app.test.arba.gov.ar/auth/token',
+     apiUrl: USE_PROXY 
+      ? 'http://localhost:3001/api/arba'  // Tu proxy local
+      : 'https://app.test.arba.gov.ar/a122rSrv/api/external',
+    authUrl: USE_PROXY
+      ? 'http://localhost:3001/api/arba/auth'
+      : 'https://idp.test.arba.gov.ar/realms/ARBA/protocol/openid-connect/token',
+    
     // Credenciales de testing - proporcionadas por ARBA
-    clientId: 'arbanet-client',
-    clientSecret: 'arbanet-secret',
+    clientId: 'A122RServicios',
+    clientSecret: '44cqahkhERKtkkDGmcqrPApCMtez3Xxt',
   },
   production: {
     // ✅ Endpoints de producción según Manual
-    apiUrl: 'https://app.arba.gov.ar/a122rSrv/api/external',
-    authUrl: 'https://app.arba.gov.ar/auth/token',
+     apiUrl: USE_PROXY
+      ? 'http://localhost:3001/api/arba'
+      : 'https://app.arba.gov.ar/a122rSrv/api/external',
+    authUrl: USE_PROXY
+      ? 'http://localhost:3001/api/arba/auth'
+      : 'https://idp.arba.gov.ar/realms/ARBA/protocol/openid-connect/token',
+    
     // Credenciales de producción - deben ser proporcionadas por ARBA
-    clientId: 'arbanet-client',
-    clientSecret: 'arbanet-secret',
+    clientId: 'A122RServicios',
+    clientSecret: 'k1pwZG4dRrK88KpMfK6ACqav1SNDiCa',
   },
 };
 
