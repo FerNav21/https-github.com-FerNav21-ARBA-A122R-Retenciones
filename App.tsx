@@ -3,6 +3,17 @@ import LocalFileProcessor from './components/LocalFileProcessor';
 import SettingsModal from './components/SettingsModal';
 import { useSettings } from './contexts/SettingsContext';
 
+/**
+ * @component App
+ * @description
+ * El componente raíz principal de la aplicación.
+ *
+ * Es responsable de renderizar la estructura general de la página, incluyendo
+ * el encabezado, el componente principal de procesamiento de archivos (`LocalFileProcessor`),
+ * y el pie de página. También gestiona la visibilidad del modal de configuración (`SettingsModal`).
+ *
+ * @returns {JSX.Element} El componente de la aplicación renderizado.
+ */
 const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const { environment } = useSettings();

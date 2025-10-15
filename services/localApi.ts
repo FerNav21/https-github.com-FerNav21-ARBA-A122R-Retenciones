@@ -2,21 +2,27 @@ import { VoucherResult } from "../types";
 import { Settings } from '../contexts/SettingsContext';
 
 /**
- * Placeholder function for processing a file via a local API, intended for future use
- * with the "Automated Processor" feature. This feature would involve a local server
- * that can access network files directly.
+ * @function processFileFromLocalApi
+ * @description
+ * Simula el procesamiento de un archivo a través de una API local. Esta función está
+ * diseñada para una futura funcionalidad de "Procesador Automatizado", donde un
+ * servidor local tendría acceso directo a los archivos de la red.
  * 
- * @param {string} fileName - The name of the file in the network folder.
- * @param {Omit<Settings, 'setEnvironment' | 'updateSetting' | 'saveSettings'>} settings - The current application settings.
- * @returns {Promise<VoucherResult[]>} - The results of the processing.
+ * Actualmente, esta función no está implementada y siempre devolverá un error.
+ * El código comentado sirve como ejemplo de cómo podría funcionar en el futuro.
+ *
+ * @param {string} fileName - El nombre del archivo ubicado en la carpeta de red.
+ * @param {Omit<Settings, 'setEnvironment' | 'updateSetting' | 'saveSettings'>} settings - La configuración actual de la aplicación.
+ * @returns {Promise<VoucherResult[]>} Una promesa que se resuelve con los resultados del procesamiento.
+ * @throws {Error} Siempre arroja un error, ya que la funcionalidad no está implementada.
  */
 export const processFileFromLocalApi = async (
   fileName: string, 
   settings: Omit<Settings, 'setEnvironment' | 'updateSetting' | 'saveSettings'>
 ): Promise<VoucherResult[]> => {
-  console.warn("Automated processing from local API is not yet implemented.");
+  console.warn("El procesamiento automatizado desde la API local aún no está implementado.");
   
-  // Example of how it might be called:
+  // Ejemplo de cómo podría ser la llamada en el futuro:
   /*
   const response = await fetch(settings.localApiUrl, {
     method: 'POST',

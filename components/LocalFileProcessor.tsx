@@ -10,24 +10,38 @@ import Phase2DJ from './Phase2DJ';
 import Phase3Voucher from './Phase3Voucher';
 import Phase4Summary from './Phase4Summary';
 
+/**
+ * @typedef {'idle' | 'auth' | 'dj' | 'voucher' | 'summary' | 'error'} ProcessingPhase
+ * @description Define las distintas fases del proceso de carga y procesamiento de archivos.
+ */
 type ProcessingPhase = 'idle' | 'auth' | 'dj' | 'voucher' | 'summary' | 'error';
 
+/**
+ * @const {string[]} STEPS
+ * @description Las etiquetas para cada paso que se muestran en el componente Stepper.
+ */
 const STEPS = ['Autenticación', 'Declaración Jurada', 'Carga de Comprobantes', 'Resumen'];
 
-// Helper to parse a simple CSV/TXT file.
-// Expects comma-separated values and a header row to be skipped.
-// Format: cuitContribuyente,sucursal,alicuota,baseImponible,importeRetencion,razonSocialContribuyente,fechaOperacion
+/**
+ * @function parseVoucherFile
+ * @description
+ * Parsea el contenido de un archivo de texto (CSV/TXT) para extraer los datos de los comprobantes.
+ * Espera valores separados por comas y omite la primera fila como encabezado.
+ *
+ * @param {string} fileContent - El contenido completo del archivo a parsear.
+ * @returns {VoucherData[]} Un array de objetos VoucherData parseados.
+ */
 const parseVoucherFile = (fileContent: string): VoucherData[] => {
     const lines = fileContent.split(/\r?\n/).filter(line => line.trim() !== '');
     if (lines.length <= 1) {
-        return []; // No data rows
+        return []; // No hay filas de datos
     }
     
     const vouchers: VoucherData[] = [];
-    // Start from 1 to skip header
+    // Empezar en 1 para omitir el encabezado
     for (let i = 1; i < lines.length; i++) {
         const parts = lines[i].split(',');
-        if (parts.length < 7) continue; // Skip malformed lines
+        if (parts.length < 7) continue; // Omitir líneas mal formadas
 
         try {
             const voucher: VoucherData = {
@@ -37,21 +51,30 @@ const parseVoucherFile = (fileContent: string): VoucherData[] => {
                 baseImponible: parseFloat(parts[3]),
                 importeRetencion: parseFloat(parts[4]),
                 razonSocialContribuyente: parts[5].trim(),
-                fechaOperacion: parts[6].trim(), // Expects YYYY-MM-DDTHH:MM:SS format
+                fechaOperacion: parts[6].trim(), // Espera formato YYYY-MM-DDTHH:MM:SS
             };
-            // Basic validation
+            // Validación básica
             if (!voucher.cuitContribuyente || isNaN(voucher.baseImponible)) {
-                console.warn(`Skipping invalid line: ${lines[i]}`);
+                console.warn(`Omitiendo línea inválida: ${lines[i]}`);
                 continue;
             }
             vouchers.push(voucher);
         } catch (error) {
-            console.error(`Error parsing line: ${lines[i]}`, error);
+            console.error(`Error al parsear línea: ${lines[i]}`, error);
         }
     }
     return vouchers;
 };
 
+/**
+ * @component LocalFileProcessor
+ * @description
+ * Componente principal que gestiona el proceso de selección, lectura y envío de
+ * un archivo de retenciones a la API de ARBA. Orquesta el flujo completo
+ * a través de múltiples fases, desde la autenticación hasta el resumen de resultados.
+ *
+ * @returns {JSX.Element} El componente renderizado.
+ */
 const LocalFileProcessor: React.FC = () => {
     const settings = useSettings();
     const [file, setFile] = useState<File | null>(null);
@@ -63,6 +86,13 @@ const LocalFileProcessor: React.FC = () => {
     const [vouchersToProcess, setVouchersToProcess] = useState<VoucherData[]>([]);
     const [error, setError] = useState<string | null>(null);
 
+    /**
+     * @function handleFileChange
+     * @description
+     * Manejador para el evento `onChange` del input de archivo. Almacena el
+     * archivo seleccionado en el estado.
+     * @param {React.ChangeEvent<HTMLInputElement>} e - El evento del cambio.
+     */
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
             setFile(e.target.files[0]);
@@ -70,6 +100,12 @@ const LocalFileProcessor: React.FC = () => {
         }
     };
 
+    /**
+     * @function resetState
+     * @description
+     * Restablece todo el estado del componente a sus valores iniciales,
+     * permitiendo al usuario iniciar un nuevo proceso.
+     */
     const resetState = () => {
         setFile(null);
         setPhase('idle');
@@ -79,13 +115,23 @@ const LocalFileProcessor: React.FC = () => {
         setResults([]);
         setVouchersToProcess([]);
         setError(null);
-        // Also reset file input
+
         const fileInput = document.getElementById('file-upload') as HTMLInputElement;
         if (fileInput) {
             fileInput.value = '';
         }
     };
 
+    /**
+     * @function handleProcess
+     * @description
+     * Función principal que se ejecuta al hacer clic en "Iniciar Procesamiento".
+     * Lee y parsea el archivo, y luego ejecuta la secuencia de llamadas a la API:
+     * 1. Autenticación
+     * 2. Búsqueda o creación de Declaración Jurada (DJ)
+     * 3. Envío de cada comprobante
+     * Finalmente, actualiza el estado para mostrar el resumen.
+     */
     const handleProcess = async () => {
         if (!file) {
             setError('Por favor, seleccione un archivo.');
@@ -112,46 +158,45 @@ const LocalFileProcessor: React.FC = () => {
         let obtainedDj: DJ;
         
         try {
-          // Phase 1: Authentication
-setPhase('auth');
-setCurrentStep(0);
+            // Fase 1: Autenticación
+            setPhase('auth');
+            setCurrentStep(0);
 
-// ✅ Obtener credenciales según configuración
-const customCreds = settings.useCustomCredentials 
-  ? { clientId: settings.customClientId, clientSecret: settings.customClientSecret }
-  : undefined;
+            const customCreds = settings.useCustomCredentials
+              ? { clientId: settings.customClientId, clientSecret: settings.customClientSecret }
+              : undefined;
 
-const config = getArbaApiConfig(settings.environment, customCreds);
+            const config = getArbaApiConfig(settings.environment, customCreds);
 
-token = await arbaApi.authenticateARBA({
-    clientId: config.clientId,
-    clientSecret: config.clientSecret,
-    username: settings.cuit,
-    password: settings.cit,
-}, settings.environment, customCreds);
+            token = await arbaApi.authenticateARBA({
+                clientId: config.clientId,
+                clientSecret: config.clientSecret,
+                username: settings.cuit,
+                password: settings.cit,
+            }, settings.environment, customCreds);
 
-            // Phase 2: Get or Create DJ
+            // Fase 2: Obtener o Crear DJ
             setPhase('dj');
             setCurrentStep(1);
 
-try {
-    obtainedDj = await arbaApi.findOrCreateDJ({
-        cuit: settings.cuit,
-        anio: parseInt(settings.anio, 10),
-        mes: parseInt(settings.mes, 10),
-        quincena: parseInt(settings.quincena, 10),
-        actividadId: settings.actividadId,
-    }, token, settings.environment, customCreds);
-} catch (djError: any) {
-    if (djError.message.includes('DJ_YA_EXISTE')) {
-        throw new Error('La DJ ya existe para este período. El manual no especifica cómo obtener el ID de una DJ existente. Contacte con soporte de ARBA.');
-    }
-    throw djError;
-}
+            try {
+                obtainedDj = await arbaApi.findOrCreateDJ({
+                    cuit: settings.cuit,
+                    anio: parseInt(settings.anio, 10),
+                    mes: parseInt(settings.mes, 10),
+                    quincena: parseInt(settings.quincena, 10),
+                    actividadId: settings.actividadId,
+                }, token, settings.environment, customCreds);
+            } catch (djError: any) {
+                if (djError.message.includes('DJ_YA_EXISTE')) {
+                    throw new Error('La DJ ya existe para este período. El manual no especifica cómo obtener el ID de una DJ existente. Contacte con soporte de ARBA.');
+                }
+                throw djError;
+            }
 
             setDj(obtainedDj);
 
-            // Phase 3: Submit Vouchers
+            // Fase 3: Enviar Comprobantes
             setPhase('voucher');
             setCurrentStep(2);
 
@@ -184,7 +229,7 @@ try {
             }
             setResults(newResults);
 
-            // Phase 4: Summary
+            // Fase 4: Resumen
             setPhase('summary');
             setCurrentStep(3);
 

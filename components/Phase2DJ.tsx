@@ -1,10 +1,26 @@
 import React from 'react';
 import { DJ } from '../types';
 
+/**
+ * @interface Phase2DJProps
+ * @description Define las propiedades que recibe el componente `Phase2DJ`.
+ * @property {DJ | null} dj - El objeto de la Declaración Jurada obtenida. Es `null` mientras la operación está en curso.
+ */
 interface Phase2DJProps {
   dj: DJ | null;
 }
 
+/**
+ * @component Phase2DJ
+ * @description
+ * Componente visual para la segunda fase del proceso: obtención de la Declaración Jurada (DJ).
+ *
+ * Muestra un indicador de carga mientras busca o crea la DJ. Una vez que la DJ
+ * se obtiene con éxito, muestra la información clave de la misma, como su ID y período.
+ *
+ * @param {Phase2DJProps} props - Las propiedades del componente.
+ * @returns {JSX.Element} El componente renderizado.
+ */
 const Phase2DJ: React.FC<Phase2DJProps> = ({ dj }) => {
   return (
     <div>
