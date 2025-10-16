@@ -6,19 +6,12 @@ interface ArbaApiConfig {
   clientId: string;
   clientSecret: string;
 }
-const USE_PROXY = false; // Cambiar según necesidad
+const USE_PROXY = true; // Cambiar según necesidad
 
 const arbaConfig: Record<Environment, ArbaApiConfig> = {
   test: {
-    // ✅ Endpoints corregidos según Manual de Integración Técnica A122R
-     apiUrl: USE_PROXY 
-      ? 'http://localhost:3001/api/arba'  // Tu proxy local
-      : 'https://app.test.arba.gov.ar/a122rSrv/api/external',
-    authUrl: USE_PROXY
-      ? 'http://localhost:3001/api/arba/auth'
-      : 'https://idp.test.arba.gov.ar/realms/ARBA/protocol/openid-connect/token',
-    
-    // Credenciales de testing - proporcionadas por ARBA
+    apiUrl: USE_PROXY ? 'http://localhost:3001/api' : 'https://app.test.arba.gov.ar/a122rSrv/api/external',
+    authUrl: USE_PROXY ? 'http://localhost:3001/api/auth' : 'https://idp.test.arba.gov.ar/realms/ARBA/protocol/openid-connect/token',
     clientId: 'A122RServicios',
     clientSecret: '44cqahkhERKtkkDGmcqrPApCMtez3Xxt',
   },
