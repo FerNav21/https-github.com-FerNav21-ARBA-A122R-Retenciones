@@ -1,0 +1,31 @@
+Cambios principales:
+
+- .github/copilot-instructions.md
+  - Nueva guía para agentes con arquitectura, flujos, ejemplos JSON, sección de debugging y pruebas sugeridas.
+
+- tests/arbaApi.test.ts
+  - Tests unitarios de ejemplo para `services/arbaApi.ts` (mock de fetch).
+
+- tests/proxy.test.ts
+  - Tests de integración para el proxy (`/api/auth`, `/api/dj`) usando `app.listen(0)` y mock de `node-fetch`.
+
+- server.js
+  - Evita llamar a `listen()` en `NODE_ENV=test` y exporta `app` para permitir pruebas sin procesos persistentes.
+
+- package.json
+  - Añadido script `test` y `vitest` en devDependencies. (No se añadieron dependencias externas adicionales para el test del proxy.)
+
+Motivación:
+- Facilitar que agentes y desarrolladores comprendan rápidamente el repo y dispongan de tests básicos para validar cambios sin tocar ARBA.
+- Permitir pruebas de integración del proxy sin levantar el servidor en CI.
+
+Notas:
+- No se movieron secretos del `config.ts` a variables de entorno en este PR (recomendado para producción en PR futuro).
+- En lugar de `supertest` se usa `http` nativo para evitar dependencias difíciles de resolver en el entorno actual.
+
+Tests:
+- Ejecutar `npm install` y `npm run test` — los tests incluidos pasan en mi entorno local.
+
+Solicito revisión de:
+- Redacción y alcance del `.github/copilot-instructions.md`.
+- Cambios en `server.js` (export y condicion de listen) — revisar si hay impacto en despliegues existentes.

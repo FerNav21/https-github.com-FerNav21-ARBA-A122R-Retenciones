@@ -41,36 +41,12 @@ export const authenticateARBA = async (
   return data.access_token;
 };
 
-const getPreviousPeriod = (period: { anio: number; mes: number; quincena: number }) => {
-    let { anio, mes, quincena } = period;
-    if (quincena === 2) {
-        quincena = 1;
-    } else {
-        quincena = 2;
-        if (mes === 1) {
-            mes = 12;
-            anio -= 1;
-        } else {
-            mes -= 1;
-        }
+export class DJAlreadyExistsError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'DJAlreadyExistsError';
     }
-    return { anio, mes, quincena };
-};
-
-export const closeDJ = async (idDj: string, token: string, environment: Environment): Promise<void> => {
-    const { apiUrl } = getArbaApiConfig(environment);
-    const response = await fetch(`${apiUrl}/declaraciones-juradas/${idDj}/cierre`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-        },
-    });
-
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Error al cerrar DJ (${response.status}): ${errorData.message || 'Error desconocido'}`);
-    }
-};
+}
 
 export const findOrCreateDJ = async (
   payload: DJPayload, 
@@ -80,34 +56,6 @@ export const findOrCreateDJ = async (
 ): Promise<DJ> => {
     const config = getArbaApiConfig(environment, customCredentials);
 
-    // ✅ Endpoint según manual: POST /declaracionJurada
-
-    // If no open DJ is found for the current period, check and close the previous period's DJ
-    const previousPeriod = getPreviousPeriod(payload);
-    const previousPeriodQuery: DJQuery = {
-        cuit: payload.cuit,
-        ...previousPeriod,
-    };
-    const prevSearchParams = new URLSearchParams(
-        Object.entries(previousPeriodQuery).map(([key, value]) => [key, String(value)])
-    );
-    const findPrevResponse = await fetch(`${config.apiUrl}/declaraciones-juradas?${prevSearchParams.toString()}`, {
-        method: 'GET',
-        headers: {
-            'Authorization': `Bearer ${token}`,
-            'Accept': 'application/json',
-        },
-    });
-
-    if (findPrevResponse.ok) {
-        const prevDjs: DJ[] = await findPrevResponse.json();
-        const openPrevDJ = prevDjs.find(dj => dj.estado !== 'CERRADA');
-        if (openPrevDJ) {
-            await closeDJ(openPrevDJ.idDj, token, environment);
-        }
-    }
-
-    // Now, create a new one for the current period
     const createResponse = await fetch(`${config.apiUrl}/declaracionJurada`, {
         method: 'POST',
         headers: {
@@ -119,26 +67,16 @@ export const findOrCreateDJ = async (
 
     if (!createResponse.ok) {
         const errorData = await createResponse.json().catch(() => ({}));
-       const message = errorData.message || 'Error desconocido';
+        const message = errorData.message || 'Error desconocido';
     
-    // ✅ Verificar si ya existe una DJ para el período
-    if (message.includes('Posee una DJ iniciada')) {
-        throw new Error('DJ_YA_EXISTE: ' + message);
+        if (message.includes('Posee una DJ iniciada')) {
+            // Throw a specific error for this case
+            throw new DJAlreadyExistsError(message);
+        }
+    
+        throw new Error(`Error al crear DJ (${createResponse.status}): ${message}`);
     }
-    
-    throw new Error(`Error al crear DJ (${createResponse.status}): ${message}`);
-}
-  if (!createResponse.ok) {
-    const errorData = await createResponse.json().catch(() => ({}));
-    const message = errorData.message || 'Error desconocido';
-    
-    // ✅ Verificar si ya existe una DJ para el período
-    if (message.includes('Posee una DJ iniciada')) {
-        throw new Error('DJ_YA_EXISTE: ' + message);
-    }
-    
-    throw new Error(`Error al crear DJ (${createResponse.status}): ${message}`);
-  }
+
     return createResponse.json();
 };
 interface SubmitVoucherResponse {
